@@ -16,7 +16,7 @@
         <div v-if="currentPage === 'login'" class="auth-container">
             <div class="auth-card">
                 <div class="logo-container">
-                    <img src="assets/logo.png" alt="MoodWave Logo" class="logo">
+                    <img src="assets/LOGO_musicface.png" alt="MoodWave Logo" class="logo">
                 </div>
                 <h2>Welcome Back</h2>
                 
@@ -75,7 +75,7 @@
         <div v-else-if="currentPage === 'register'" class="auth-container">
             <div class="auth-card">
                 <div class="logo-container">
-                    <img src="assets/logo.png" alt="MoodWave Logo" class="logo">
+                    <img src="assets/LOGO_musicface.png" alt="MoodWave Logo" class="logo">
                 </div>
                 <h2>Create Account</h2>
 
@@ -156,7 +156,7 @@
         <!-- Loading Page -->
         <div v-else-if="currentPage === 'loading'" class="loading-container">
             <div class="loading-card">
-                <img src="assets/logo.png" alt="MoodWave Logo" class="logo loading-logo">
+                <img src="assets/LOGO_musicface.png" alt="MoodWave Logo" class="logo loading-logo">
                 <div class="loader"></div>
                 <h2>Welcome to MoodWave, {{ currentUser }}!</h2>
                 <p>Preparing your personalized music experience...</p>
@@ -168,16 +168,42 @@
             <!-- Navigation Bar -->
             <nav class="navbar">
                 <div class="nav-left">
-                    <img src="assets/logo.png" alt="MoodWave Logo" class="nav-logo">
+                    <img src="assets/LOGO_musicface.png" alt="MoodWave Logo" class="nav-logo">
                     <a href="#" @click.prevent="navigateTo('home')" :class="{ active: currentPage === 'home' }">Home</a>
                     <a href="#" @click.prevent="navigateTo('music')" :class="{ active: currentPage === 'music' }">Music Recommendation</a>
                     <a href="#" @click.prevent="navigateTo('about')" :class="{ active: currentPage === 'about' }">About Us</a>
                 </div>
-                <div class="nav-right">
-                    <button class="logout-button" @click="logout">
-                        <i class="fa-solid fa-sign-out-alt"></i> Logout
-                    </button>
-                </div>
+                 <div class="nav-right">
+        <div class="theme-dropdown">
+            <button class="theme-toggle" @click="toggleThemeDropdown">
+                <i :class="darkMode ? 'fa-solid fa-sun' : 'fa-solid fa-moon'"></i>
+                <span>{{ darkMode ? 'Light' : 'Dark' }} Mode</span>
+                <i class="fa-solid fa-chevron-down" :class="{ 'rotate': showThemeDropdown }"></i>
+            </button>
+            <!-- Dark mode button -->
+            <div class="dropdown-menu" v-show="showThemeDropdown">
+                <button 
+                    class="dropdown-item" 
+                    :class="{ active: !darkMode }"
+                    @click="setTheme('light')"
+                >
+                    <i class="fa-solid fa-sun"></i>
+                    Light Mode
+                </button>
+                <button 
+                    class="dropdown-item" 
+                    :class="{ active: darkMode }"
+                    @click="setTheme('dark')"
+                >
+                    <i class="fa-solid fa-moon"></i>
+                    Dark Mode
+                </button>
+            </div>
+        </div>
+        <button class="logout-button" @click="logout">
+            <i class="fa-solid fa-sign-out-alt"></i> Logout
+        </button>
+    </div>
             </nav>
 
             <!-- Main Content -->
