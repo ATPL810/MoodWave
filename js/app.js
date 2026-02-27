@@ -71,7 +71,13 @@ new Vue({
         recommendedTracks: [],
         
         // Timer for recording countdown
-        recordingTimer: null
+        recordingTimer: null,
+
+        // Theme management
+        darkMode: false,
+        showThemeDropdown: false,
+        // Logout confirmation modal
+        showLogoutModal: false
     },
     
     computed: {
@@ -182,14 +188,26 @@ new Vue({
             }, 2000);
         },
         
-        // Logout
+        // Confirm logout
+        confirmLogout() {
+            this.showLogoutModal = true;
+        },
+
+        // Cancel logout
+        cancelLogout() {
+            this.showLogoutModal = false;
+        },
+
+        // Perform logout
         logout() {
+            this.showLogoutModal = false;
             this.currentUser = '';
             this.currentPage = 'login';
             this.clearForms();
             this.moodHistory = [];
             this.resetAnalysis();
             this.showToast('Logged out successfully', 'success');
+            // Theme will be reapplied via watcher
         },
         
         // Show toast notification
@@ -463,6 +481,95 @@ new Vue({
         // Play track (simulated)
         playTrack(track) {
             this.showToast(`Now playing: ${track.name} by ${track.artist}`, 'success');
+        },
+
+        toggleThemeDropdown() {
+            this.showThemeDropdown = !this.showThemeDropdown;
+            
+            // Close dropdown when clicking outside
+            if (this.showThemeDropdown) {
+                setTimeout(() => {
+                    window.addEventListener('click', this.closeThemeDropdown);
+                }, 0);
+            }
+        },
+        
+        // Close theme dropdown
+        closeThemeDropdown(e) {
+            if (!e.target.closest('.theme-dropdown')) {
+                this.showThemeDropdown = false;
+                window.removeEventListener('click', this.closeThemeDropdown);
+            }
+        },
+        
+        // Set theme
+        setTheme(theme) {
+            this.darkMode = theme === 'dark';
+            this.showThemeDropdown = false;
+            
+            // Save preference to localStorage
+            localStorage.setItem('moodwave-theme', theme);
+            
+            // Apply theme classes
+            this.applyTheme();
+            
+            this.showToast(`Switched to ${theme} mode`, 'success');
+        },
+
+        // Load saved theme preference
+        loadThemePreference() {
+            const savedTheme = localStorage.getItem('moodwave-theme');
+            if (savedTheme) {
+                this.darkMode = savedTheme === 'dark';
+                this.applyTheme();
+            }
+        },
+
+        // Apply theme classes based on current page and mode
+        applyTheme() {
+            // Remove existing theme classes
+            document.body.classList.remove('dark-mode-auth');
+            
+            // Apply to app container if it exists (internal pages)
+            const appContainer = document.querySelector('.app-container');
+            if (appContainer) {
+                if (this.darkMode) {
+                    appContainer.classList.add('dark-mode');
+                } else {
+                    appContainer.classList.remove('dark-mode');
+                }
+            }
+            
+            // Apply to auth pages (login, register, loading)
+            if (this.currentPage === 'login' || this.currentPage === 'register' || this.currentPage === 'loading') {
+                if (this.darkMode) {
+                    document.body.classList.add('dark-mode-auth');
+                }
+            }
+        },
+    },
+
+    watch: {
+        currentPage: {
+            immediate: true,
+            handler(newPage) {
+                // Reapply theme when page changes
+                this.$nextTick(() => {
+                    this.applyTheme();
+                });
+            }
         }
+    },
+
+    mounted() {
+        // Load theme preference
+        this.loadThemePreference();
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (this.showThemeDropdown && !e.target.closest('.theme-dropdown')) {
+                this.showThemeDropdown = false;
+            }
+        });
     }
 });

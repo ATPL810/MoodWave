@@ -173,37 +173,36 @@
                     <a href="#" @click.prevent="navigateTo('music')" :class="{ active: currentPage === 'music' }">Music Recommendation</a>
                     <a href="#" @click.prevent="navigateTo('about')" :class="{ active: currentPage === 'about' }">About Us</a>
                 </div>
-                 <div class="nav-right">
-        <div class="theme-dropdown">
-            <button class="theme-toggle" @click="toggleThemeDropdown">
-                <i :class="darkMode ? 'fa-solid fa-sun' : 'fa-solid fa-moon'"></i>
-                <span>{{ darkMode ? 'Light' : 'Dark' }} Mode</span>
-                <i class="fa-solid fa-chevron-down" :class="{ 'rotate': showThemeDropdown }"></i>
-            </button>
-            <!-- Dark mode button -->
-            <div class="dropdown-menu" v-show="showThemeDropdown">
-                <button 
-                    class="dropdown-item" 
-                    :class="{ active: !darkMode }"
-                    @click="setTheme('light')"
-                >
-                    <i class="fa-solid fa-sun"></i>
-                    Light Mode
-                </button>
-                <button 
-                    class="dropdown-item" 
-                    :class="{ active: darkMode }"
-                    @click="setTheme('dark')"
-                >
-                    <i class="fa-solid fa-moon"></i>
-                    Dark Mode
-                </button>
-            </div>
-        </div>
-        <button class="logout-button" @click="logout">
-            <i class="fa-solid fa-sign-out-alt"></i> Logout
-        </button>
-    </div>
+                <div class="nav-right">
+                    <button class="logout-button" @click="confirmLogout">
+                        <i class="fa-solid fa-sign-out-alt"></i> Logout
+                    </button>
+                    <div class="theme-dropdown">
+                        <button class="theme-toggle" @click="toggleThemeDropdown">
+                            <i :class="darkMode ? 'fa-solid fa-sun' : 'fa-solid fa-moon'"></i>
+                            <span>Theme</span>
+                            <i class="fa-solid fa-chevron-down" :class="{ 'rotate': showThemeDropdown }"></i>
+                        </button>
+                        <div class="dropdown-menu" v-show="showThemeDropdown">
+                            <button 
+                                class="dropdown-item" 
+                                :class="{ active: !darkMode }"
+                                @click="setTheme('light')"
+                            >
+                                <i class="fa-solid fa-sun"></i>
+                                Light
+                            </button>
+                            <button 
+                                class="dropdown-item" 
+                                :class="{ active: darkMode }"
+                                @click="setTheme('dark')"
+                            >
+                                <i class="fa-solid fa-moon"></i>
+                                Dark
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </nav>
 
             <!-- Main Content -->
@@ -395,6 +394,25 @@
             <footer class="footer">
                 <p>&copy; 2026 MoodWave. All rights reserved.</p>
             </footer>
+        </div>
+
+        <!-- Logout Confirmation Modal -->
+        <div class="modal-overlay" v-if="showLogoutModal" @click="cancelLogout">
+            <div class="modal-content" @click.stop>
+                <div class="modal-header">
+                    <!-- <h3>Confirm Logout</h3> -->
+                    <button class="modal-close" @click="cancelLogout">
+                        <i class="fa-solid fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <h3>Are you sure you want to logout from MoodWave?</h3>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-button cancel" @click="cancelLogout">No</button>
+                    <button class="modal-button confirm" @click="logout">Yes</button>
+                </div>
+            </div>
         </div>
 
         <!-- Toast Notification -->
