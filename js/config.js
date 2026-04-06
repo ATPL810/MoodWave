@@ -1,5 +1,5 @@
 // API Configuration - SINGLE SOURCE OF TRUTH
-const API_BASE_URL = "https://moodwave-backend-1.onrender.com/api"; 
+const API_BASE_URL = "https://moodwave-backend-1.onrender.com"; 
 
 
 // Token management
