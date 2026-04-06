@@ -419,7 +419,80 @@
         <div v-if="toast.show" :class="['toast', toast.type]">
             {{ toast.message }}
         </div>
+
+        <!-- Camera Modal for Facial Detection -->
+        <div class="modal-overlay" v-if="showCameraModal" @click="closeCameraModal">
+            <div class="modal-content camera-modal" @click.stop>
+                <div class="modal-header">
+                    <h3>Facial Expression Analysis</h3>
+                    <button class="modal-close" @click="closeCameraModal">
+                        <i class="fa-solid fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="camera-container">
+                        <video id="camera-preview" autoplay muted class="camera-preview"></video>
+                        <div class="camera-overlay" v-if="facialAnalysis.recording">
+                            <div class="countdown">{{ facialAnalysis.countdown }}s</div>
+                            <div class="detection-info">
+                                <p>Detected: <strong>{{ detectedExpression || 'Analyzing...' }}</strong></p>
+                                <p>Mood: <strong>{{ cameraMood || '---' }}</strong></p>
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" :style="{ width: cameraConfidence + '%' }"></div>
+                                </div>
+                                <p>Confidence: {{ cameraConfidence }}%</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Voice Modal -->
+        <div class="modal-overlay" v-if="showVoiceModal" @click="closeVoiceModal">
+            <div class="modal-content voice-modal" @click.stop>
+                <div class="modal-header">
+                    <h3>Voice Tone Analysis</h3>
+                    <button class="modal-close" @click="closeVoiceModal">
+                        <i class="fa-solid fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="voice-container">
+                        <div class="voice-animation" v-if="voiceAnalysis.recording">
+                            <div class="mic-icon">
+                                <i class="fa-solid fa-microphone"></i>
+                            </div>
+                            <div class="voice-waves">
+                                <span></span><span></span><span></span><span></span><span></span>
+                            </div>
+                            <p>Recording... Speak now</p>
+                            <div class="detection-info">
+                                <p>Detected Mood: <strong>{{ voiceMood || 'Analyzing...' }}</strong></p>
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" :style="{ width: voiceConfidence + '%' }"></div>
+                                </div>
+                                <p>Confidence: {{ voiceConfidence }}%</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Volume Slider -->
+        <div class="volume-control" v-if="currentPlayingTrackId">
+            <button class="volume-button" @click="toggleVolumeSlider">
+                <i class="fa-solid fa-volume-up"></i>
+            </button>
+            <div class="volume-slider" v-show="showVolumeSlider">
+                <input type="range" min="0" max="100" :value="audioVolume * 100" @input="setVolume($event.target.value)">
+            </div>
+        </div>
+
     </div>
+
+
     <script src="js/config.js"></script>
     <script src="js/app.js"></script>
 </body>
