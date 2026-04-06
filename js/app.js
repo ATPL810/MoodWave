@@ -1,4 +1,4 @@
-// NO API URL DEFINITION HERE - It's already in config.js
+
 // The config.js is loaded before app.js, so API_BASE_URL is already available globally
 
 // Session timer management

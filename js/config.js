@@ -1,6 +1,6 @@
 // API Configuration - SINGLE SOURCE OF TRUTH
-const API_BASE_URL = 'http://localhost:5000/api'; // Change this to your Render URL when deploying
-// Example for production: const API_BASE_URL = 'https://moodwave-backend.onrender.com/api';
+const API_BASE_URL = "https://moodwave-backend-1.onrender.com"; 
+
 
 // Token management
 let authToken = null;
