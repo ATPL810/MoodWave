@@ -1271,6 +1271,65 @@ body.dark-mode-auth .modal-button.cancel:hover {
     text-align: center;
 }
 
+/* Now Playing Bar */
+.now-playing-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 1000;
+    box-shadow: 0 -4px 15px rgba(0,0,0,0.2);
+}
+
+.now-playing-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+}
+
+.now-playing-info i {
+    font-size: 18px;
+}
+
+.now-playing-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.stop-button {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.stop-button:hover {
+    background: rgba(255,255,255,0.3);
+    transform: scale(1.05);
+}
+
+/* Dark mode now playing bar */
+.app-container.dark-mode .now-playing-bar {
+    background: linear-gradient(135deg, #4a3f7a 0%, #5a3d7a 100%);
+}
+
+/* Adjust footer margin to accommodate now playing bar */
+.footer {
+    margin-bottom: 60px;
+}
+
 .confidence-bar {
     height: 8px;
     background: rgba(255,255,255,0.3);

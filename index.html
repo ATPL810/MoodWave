@@ -206,6 +206,26 @@
 
             <!-- Main Content -->
             <main class="main-content">
+                <!-- Now Playing Bar -->
+                <div class="now-playing-bar" v-if="currentPlayingTrackId">
+                    <div class="now-playing-info">
+                        <i class="fa-solid fa-music"></i>
+                        <span>{{ currentTrackName }} - {{ currentArtist }}</span>
+                    </div>
+                    <div class="now-playing-controls">
+                        <button @click="stopCurrentTrack" class="stop-button">
+                            <i class="fa-solid fa-stop"></i>
+                        </button>
+                        <div class="volume-control">
+                            <button @click="toggleVolumeSlider" class="volume-button">
+                                <i class="fa-solid fa-volume-up"></i>
+                            </button>
+                            <div class="volume-slider" v-show="showVolumeSlider">
+                                <input type="range" min="0" max="100" :value="audioVolume * 100" @input="setVolume($event.target.value)">
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <!-- Home Page -->
                 <div v-if="currentPage === 'home'">
                     <div class="page-header">
@@ -328,17 +348,17 @@
                     <!-- Music Recommendations -->
                     <div v-if="allModalsCompleted" class="recommendations">
                         <h2>Recommended For You</h2>
-                        <div class="music-grid">
-                            <div v-for="(track, index) in recommendedTracks" :key="index" class="music-card">
-                                <div class="album-art" :style="{ backgroundColor: track.color }"></div>
-                                <div class="track-info">
-                                    <h4>{{ track.name }}</h4>
-                                    <p>{{ track.artist }}</p>
-                                </div>
-                                <button class="play-button" @click="playTrack(track)">
-                                    <i class="fa-solid fa-play"></i>
-                                </button>
+                        <div class="music-card" v-for="track in recommendedTracks" :key="track.id">
+                            <div class="album-art" :style="{ backgroundColor: track.color }">
+                                <i class="fa-solid fa-music"></i>
                             </div>
+                            <div class="track-info">
+                                <h4>{{ track.name }}</h4>
+                                <p>{{ track.artist }}</p>
+                            </div>
+                            <button class="play-button" @click="togglePlayPause(track)">
+                                <i :class="currentPlayingTrackId === track.id && isPlaying ? 'fa-solid fa-pause' : 'fa-solid fa-play'"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
