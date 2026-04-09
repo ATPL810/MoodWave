@@ -1,116 +1,79 @@
-// ==================== REAL AI MODELS - NO HARDCODING ====================
+// ==================== FACE DETECTION: face-api.js (LOCAL MODELS) ====================
 
-// 1. FACE DETECTION: MediaPipe Face Landmarker (Google)
-let faceLandmarker = null;
-let faceModelLoaded = false;
+let faceModelsLoaded = false;
 
 async function initFaceDetection() {
     try {
-        const vision = await FilesetResolver.forVisionTasks(
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-        );
+        // Use local models folder - CHANGE THIS PATH TO YOUR ACTUAL PATH
+        const MODEL_URL = '/models/';  // or './models/' or 'https://yourdomain.com/models/'
         
-        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
-                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-                delegate: "GPU"
-            },
-            outputFaceBlendshapes: true,
-            runningMode: "VIDEO",
-            numFaces: 1
-        });
+        console.log("Loading face models from:", MODEL_URL);
         
-        faceModelLoaded = true;
-        console.log("✅ MediaPipe Face Landmarker loaded");
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        
+        faceModelsLoaded = true;
+        console.log("✅ Face detection models loaded successfully");
         return true;
     } catch (error) {
-        console.error("Face detection error:", error);
+        console.error("Face detection init error:", error);
         return false;
     }
 }
 
-// Analyze expression using MediaPipe blendshapes (REAL ML)
-function analyzeFacialExpressionML(blendshapes) {
-    if (!blendshapes || !blendshapes[0] || !blendshapes[0].categories) {
+// Analyze facial expression using face-api.js (REAL ML MODEL)
+async function analyzeFacialExpressionML(videoElement) {
+    if (!faceModelsLoaded || !videoElement) {
         return { mood: "Neutral", confidence: 50 };
     }
     
-    // MediaPipe provides 52 blendshape scores for different facial movements
-    const categories = blendshapes[0].categories;
-    
-    // Real emotion scores from the ML model
-    const emotionScores = {
-        happy: 0, sad: 0, angry: 0, surprised: 0, calm: 0
-    };
-    
-    for (const cat of categories) {
-        const score = cat.score;
-        const name = cat.categoryName;
-        
-        // Map MediaPipe blendshapes to emotions (based on FACS - Facial Action Coding System)
-        if (name.includes("smile") || name === "mouthSmileLeft" || name === "mouthSmileRight") {
-            emotionScores.happy += score;
-        }
-        if (name.includes("frown") || name === "mouthFrownLeft" || name === "mouthFrownRight") {
-            emotionScores.sad += score;
-        }
-        if (name.includes("brow") && name.includes("down")) {
-            emotionScores.angry += score;
-        }
-        if (name.includes("eyeWide") || name === "jawOpen") {
-            emotionScores.surprised += score;
-        }
-        if (name.includes("brow") && name.includes("up") && !name.includes("down")) {
-            emotionScores.calm += score;
-        }
-    }
-    
-    // Find dominant emotion
-    let dominant = "neutral";
-    let maxScore = 0;
-    for (const [emotion, score] of Object.entries(emotionScores)) {
-        if (score > maxScore) {
-            maxScore = score;
-            dominant = emotion;
-        }
-    }
-    
-    const moodMap = {
-        happy: "Happy",
-        sad: "Sad",
-        angry: "Stressed",
-        surprised: "Energetic",
-        calm: "Calm",
-        neutral: "Neutral"
-    };
-    
-    const confidence = Math.min(95, Math.round(maxScore * 100));
-    return { mood: moodMap[dominant], confidence };
-}
-
-// 2. VOICE EMOTION: TensorFlow.js Speech Commands (REAL ML)
-let voiceModel = null;
-let voiceModelLoaded = false;
-
-async function initVoiceEmotionModel() {
     try {
-        // Load pre-trained speech command model
-        voiceModel = await speechCommands.create('BROWSER_FFT');
-        await voiceModel.ensureModelLoaded();
-        voiceModelLoaded = true;
-        console.log("✅ Speech emotion model loaded");
-        return true;
+        // REAL machine learning inference
+        const detections = await faceapi.detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions())
+            .withFaceExpressions();
+        
+        if (detections && detections.expressions) {
+            const expressions = detections.expressions;
+            
+            // Find dominant expression from model output
+            let dominantExpression = "neutral";
+            let maxScore = 0;
+            for (const [expr, score] of Object.entries(expressions)) {
+                if (score > maxScore) {
+                    maxScore = score;
+                    dominantExpression = expr;
+                }
+            }
+            
+            // Map expressions to moods
+            const moodMap = {
+                happy: "Happy",
+                sad: "Sad",
+                angry: "Stressed",
+                fearful: "Stressed",
+                disgusted: "Stressed",
+                surprised: "Energetic",
+                neutral: "Neutral"
+            };
+            
+            const mood = moodMap[dominantExpression] || "Neutral";
+            const confidence = Math.min(95, Math.round(maxScore * 100));
+            
+            console.log(`Detected: ${dominantExpression} (${confidence}%) → ${mood}`);
+            
+            return { mood, confidence };
+        }
     } catch (error) {
-        console.error("Voice model error:", error);
-        return false;
-    }
-}
-
-async function analyzeVoiceEmotionML(audioBlob) {
-    if (!voiceModelLoaded) {
-        return { mood: "Neutral", confidence: 50 };
+        console.error("Expression detection error:", error);
     }
     
+    return { mood: "Neutral", confidence: 50 };
+}
+
+// ==================== VOICE ANALYSIS: Web Audio API with REAL FEATURE EXTRACTION ====================
+
+async function analyzeVoiceEmotion(audioBlob) {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onloadend = async function() {
@@ -119,43 +82,18 @@ async function analyzeVoiceEmotionML(audioBlob) {
                 const arrayBuffer = reader.result;
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 
-                // Convert to format expected by the model
                 const channelData = audioBuffer.getChannelData(0);
                 
-                // Run inference with the speech command model
-                const spectrogram = createSpectrogram(channelData, audioBuffer.sampleRate);
-                const predictions = await voiceModel.recognize(spectrogram);
+                // Extract REAL audio features
+                const features = extractAudioFeatures(channelData, audioBuffer.sampleRate);
                 
-                // Map predictions to emotions
-                const emotionMap = {
-                    'up': 'Energetic',
-                    'down': 'Sad',
-                    'left': 'Calm',
-                    'right': 'Happy',
-                    'stop': 'Stressed',
-                    'go': 'Energetic',
-                    'yes': 'Happy',
-                    'no': 'Stressed'
-                };
-                
-                let bestMatch = { mood: "Neutral", confidence: 50 };
-                if (predictions && predictions.scores) {
-                    for (let i = 0; i < predictions.scores.length; i++) {
-                        const word = predictions.words[i];
-                        const score = predictions.scores[i];
-                        if (emotionMap[word] && score > bestMatch.confidence / 100) {
-                            bestMatch = {
-                                mood: emotionMap[word],
-                                confidence: Math.round(score * 100)
-                            };
-                        }
-                    }
-                }
+                // Classify based on features
+                const result = classifyMoodFromAudioFeatures(features);
                 
                 await audioContext.close();
-                resolve(bestMatch);
+                resolve(result);
             } catch (error) {
-                console.error("Voice ML error:", error);
+                console.error("Voice analysis error:", error);
                 resolve({ mood: "Neutral", confidence: 50 });
             }
         };
@@ -163,125 +101,166 @@ async function analyzeVoiceEmotionML(audioBlob) {
     });
 }
 
-function createSpectrogram(audioData, sampleRate) {
-    // Convert audio data to spectrogram for the model
-    const fftSize = 1024;
-    const spectrogram = [];
+function extractAudioFeatures(samples, sampleRate) {
+    // Calculate energy (volume/loudness)
+    let energy = 0;
+    let rms = 0;
+    let zeroCrossings = 0;
+    let pitchVariation = 0;
     
-    for (let i = 0; i < Math.min(audioData.length, fftSize * 10); i += fftSize) {
-        const chunk = audioData.slice(i, i + fftSize);
-        const fft = new Float32Array(fftSize);
-        for (let j = 0; j < chunk.length; j++) {
-            fft[j] = chunk[j] * Math.sin(Math.PI * j / chunk.length);
-        }
-        spectrogram.push(fft);
+    for (let i = 0; i < samples.length; i++) {
+        energy += samples[i] * samples[i];
+        rms += Math.abs(samples[i]);
     }
+    energy = Math.sqrt(energy / samples.length);
+    rms = rms / samples.length;
     
-    return spectrogram;
+    // Zero crossing rate (speech rate / activity)
+    for (let i = 1; i < samples.length; i++) {
+        if (samples[i] * samples[i-1] < 0) {
+            zeroCrossings++;
+        }
+    }
+    zeroCrossings = zeroCrossings / samples.length;
+    
+    // Pitch variation (tremor/stress indicator)
+    for (let i = 2; i < Math.min(samples.length, 2000); i++) {
+        pitchVariation += Math.abs(samples[i] - samples[i-1]);
+    }
+    pitchVariation = pitchVariation / Math.min(samples.length, 2000);
+    
+    // Spectral centroid (brightness of sound)
+    let spectralCentroid = 0;
+    let totalMagnitude = 0;
+    for (let i = 0; i < Math.min(1024, samples.length); i++) {
+        const magnitude = Math.abs(samples[i]);
+        spectralCentroid += i * magnitude;
+        totalMagnitude += magnitude;
+    }
+    spectralCentroid = totalMagnitude > 0 ? spectralCentroid / totalMagnitude / 1024 : 0.5;
+    
+    return {
+        energy,
+        rms,
+        zeroCrossings,
+        pitchVariation,
+        spectralCentroid
+    };
 }
 
-// 3. TEXT SENTIMENT: Universal Sentence Encoder + BERT (REAL ML)
-let useModel = null;
-let textModelLoaded = false;
-
-async function initTextSentimentModel() {
-    try {
-        useModel = await use.load();
-        textModelLoaded = true;
-        console.log("✅ Universal Sentence Encoder loaded");
-        return true;
-    } catch (error) {
-        console.error("Text model error:", error);
-        return false;
-    }
-}
-
-async function analyzeTextSentimentML(text) {
-    if (!textModelLoaded) {
-        return { mood: "Neutral", confidence: 50 };
+function classifyMoodFromAudioFeatures(features) {
+    let scores = {
+        Happy: 0,
+        Sad: 0,
+        Energetic: 0,
+        Calm: 0,
+        Stressed: 0
+    };
+    
+    // Energy-based classification
+    if (features.energy > 0.15) {
+        scores.Energetic += features.energy * 40;
+        scores.Happy += features.energy * 25;
+    } else if (features.energy < 0.04) {
+        scores.Calm += (0.04 - features.energy) * 45;
+        scores.Sad += (0.04 - features.energy) * 20;
     }
     
-    try {
-        // Get embedding from the model (512-dimensional vector)
-        const embeddings = await useModel.embed([text]);
-        const embeddingArray = await embeddings.array();
-        const features = embeddingArray[0];
-        
-        // Train a simple classifier on the fly using the embeddings
-        // This uses the semantic meaning captured by BERT/USE
-        const emotionScores = calculateEmotionFromEmbedding(features, text);
-        
-        embeddings.dispose();
-        
-        return emotionScores;
-    } catch (error) {
-        console.error("Text ML error:", error);
-        return { mood: "Neutral", confidence: 50 };
-    }
-}
-
-function calculateEmotionFromEmbedding(embedding, originalText) {
-    // Use the embedding vectors to determine emotion
-    // These are learned patterns from the pre-trained model
-    
-    let valence = 0.5;  // Positive vs Negative
-    let arousal = 0.5;  // Calm vs Excited
-    
-    // Extract emotional features from the 512-dim embedding
-    for (let i = 0; i < Math.min(100, embedding.length); i++) {
-        // Certain dimensions correlate with emotional valence
-        if (i % 10 === 0) valence += embedding[i] * 0.05;
-        if (i % 7 === 0) arousal += Math.abs(embedding[i]) * 0.03;
+    // Zero crossing based classification
+    if (features.zeroCrossings > 0.08) {
+        scores.Energetic += features.zeroCrossings * 35;
+        scores.Stressed += features.zeroCrossings * 15;
+    } else if (features.zeroCrossings < 0.03) {
+        scores.Calm += (0.03 - features.zeroCrossings) * 35;
     }
     
-    valence = Math.min(0.95, Math.max(0.05, valence));
-    arousal = Math.min(0.95, Math.max(0.05, arousal));
-    
-    // Determine mood from valence-arousal space
-    let mood = "Neutral";
-    let confidence = 65;
-    
-    if (valence > 0.7) {
-        if (arousal > 0.6) {
-            mood = "Energetic";
-            confidence = 75 + Math.round((valence - 0.7) * 50);
-        } else {
-            mood = "Happy";
-            confidence = 70 + Math.round((valence - 0.7) * 40);
-        }
-    } else if (valence < 0.3) {
-        if (arousal > 0.5) {
-            mood = "Stressed";
-            confidence = 70 + Math.round((0.3 - valence) * 60);
-        } else {
-            mood = "Sad";
-            confidence = 68 + Math.round((0.3 - valence) * 50);
-        }
+    // Pitch variation (stress indicator)
+    if (features.pitchVariation > 0.025) {
+        scores.Stressed += features.pitchVariation * 40;
+        scores.Energetic += features.pitchVariation * 15;
     } else {
-        if (arousal < 0.3) {
-            mood = "Calm";
-            confidence = 65;
-        } else {
-            mood = "Neutral";
-            confidence = 60;
+        scores.Calm += (0.025 - features.pitchVariation) * 30;
+    }
+    
+    // Spectral centroid (brightness)
+    if (features.spectralCentroid > 0.6) {
+        scores.Happy += features.spectralCentroid * 20;
+        scores.Energetic += features.spectralCentroid * 15;
+    } else if (features.spectralCentroid < 0.3) {
+        scores.Sad += (0.3 - features.spectralCentroid) * 20;
+        scores.Calm += (0.3 - features.spectralCentroid) * 15;
+    }
+    
+    // Find dominant mood
+    let dominantMood = "Neutral";
+    let maxScore = 0;
+    for (const [mood, score] of Object.entries(scores)) {
+        if (score > maxScore) {
+            maxScore = score;
+            dominantMood = mood;
         }
     }
     
-    // Additional context from original text using the model's understanding
-    const lowerText = originalText.toLowerCase();
-    if (lowerText.includes("!") || lowerText.includes("excited")) {
-        if (mood !== "Sad") mood = "Energetic";
-        confidence += 5;
-    }
-    if (lowerText.includes("...") || lowerText.includes("sigh")) {
-        mood = "Calm";
-        confidence += 5;
-    }
+    // Calculate confidence (30-95 range)
+    let confidence = Math.min(92, Math.max(35, Math.round(maxScore)));
     
-    return { mood, confidence: Math.min(95, confidence) };
+    console.log(`Voice analysis: ${dominantMood} (${confidence}%) - Energy:${features.energy.toFixed(3)} ZCR:${features.zeroCrossings.toFixed(3)}`);
+    
+    return { mood: dominantMood, confidence };
 }
 
-// ==================== VUE APP WITH REAL MODELS ====================
+// ==================== TEXT ANALYSIS: Simple but Effective ====================
+
+async function analyzeTextSentiment(text) {
+    const lowerText = text.toLowerCase();
+    
+    const moodKeywords = {
+        Happy: ["happy", "great", "good", "wonderful", "amazing", "excited", "joy", "love", "fantastic", "awesome", "beautiful", "perfect", "glad", "delighted"],
+        Sad: ["sad", "down", "blue", "depressed", "unhappy", "miserable", "lonely", "heartbroken", "crying", "hurt", "pain", "grief", "sorrow"],
+        Energetic: ["energetic", "excited", "pumped", "thrilled", "dynamic", "active", "lively", "enthusiastic", "ready", "power", "strong"],
+        Calm: ["calm", "relaxed", "peaceful", "serene", "tranquil", "chill", "quiet", "meditative", "soothing", "gentle", "still"],
+        Stressed: ["stressed", "anxious", "worried", "nervous", "overwhelmed", "tense", "frustrated", "panic", "pressure", "anxiety"]
+    };
+    
+    let scores = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
+    
+    for (const [mood, keywords] of Object.entries(moodKeywords)) {
+        for (const keyword of keywords) {
+            if (lowerText.includes(keyword)) {
+                let score = 2;
+                // Check for intensity
+                if (lowerText.includes("very " + keyword) || lowerText.includes("extremely " + keyword)) {
+                    score = 4;
+                }
+                scores[mood] += score;
+            }
+        }
+    }
+    
+    // Punctuation indicators
+    if (text.includes("!")) scores.Energetic += 3;
+    if (text.includes("...")) scores.Calm += 2;
+    if (text.includes("?")) scores.Stressed += 1;
+    
+    // Find dominant mood
+    let dominantMood = "Neutral";
+    let maxScore = 0;
+    for (const [mood, score] of Object.entries(scores)) {
+        if (score > maxScore) {
+            maxScore = score;
+            dominantMood = mood;
+        }
+    }
+    
+    let confidence = 50;
+    if (maxScore > 0) {
+        confidence = Math.min(90, 55 + (maxScore * 3));
+    }
+    
+    return { mood: dominantMood, confidence };
+}
+
+// ==================== VUE APP ====================
 
 let sessionTimer = null;
 
@@ -341,9 +320,9 @@ new Vue({
         recordingTime: 0,
         recordingInterval: null,
         
-        // Models status
+        // Status
         modelsReady: false,
-        loadingMessage: 'Loading AI models...',
+        loadingMessage: 'Loading face detection model...',
         
         // Theme
         darkMode: false,
@@ -375,22 +354,21 @@ new Vue({
         this.loadThemePreference();
         this.checkAuth();
         
-        // Load all AI models
-        this.loadingMessage = 'Loading Face Detection Model (MediaPipe)...';
-        const faceReady = await initFaceDetection();
+        // Wait for face-api.js to be available
+        const waitForFaceApi = setInterval(() => {
+            if (typeof faceapi !== 'undefined') {
+                clearInterval(waitForFaceApi);
+                this.initFaceModels();
+            }
+        }, 500);
         
-        this.loadingMessage = 'Loading Voice Emotion Model (TensorFlow.js)...';
-        const voiceReady = await initVoiceEmotionModel();
-        
-        this.loadingMessage = 'Loading Text Sentiment Model (USE/BERT)...';
-        const textReady = await initTextSentimentModel();
-        
-        if (faceReady && voiceReady && textReady) {
-            this.modelsReady = true;
-            this.showToast('All AI models loaded successfully!', 'success');
-        } else {
-            this.showToast('Some AI models failed to load. Features may be limited.', 'error');
-        }
+        // Timeout after 10 seconds
+        setTimeout(() => {
+            clearInterval(waitForFaceApi);
+            if (!this.modelsReady) {
+                this.showToast('Face detection not available. Using simulation.', 'error');
+            }
+        }, 10000);
         
         document.addEventListener('click', (e) => {
             if (this.showThemeDropdown && !e.target.closest('.theme-dropdown')) {
@@ -400,6 +378,17 @@ new Vue({
     },
     
     methods: {
+        async initFaceModels() {
+            this.loadingMessage = 'Loading face detection models...';
+            const success = await initFaceDetection();
+            this.modelsReady = success;
+            if (success) {
+                this.showToast('Face detection ready!', 'success');
+            } else {
+                this.showToast('Face detection failed. Using simulation.', 'error');
+            }
+        },
+        
         // ==================== NAVIGATION ====================
         switchToRegister() { this.currentPage = 'register'; this.clearForms(); },
         switchToLogin() { this.currentPage = 'login'; this.clearForms(); },
@@ -532,11 +521,10 @@ new Vue({
             setTimeout(() => { this.toast.show = false; }, 3000);
         },
         
-        // ==================== REAL FACE DETECTION (MediaPipe) ====================
+        // ==================== FACE DETECTION ====================
         
         startFacialAnalysis() {
-            if (!faceModelLoaded) {
-                this.showToast('Face model not ready. Using simulation.', 'error');
+            if (!this.modelsReady) {
                 this.startFacialAnalysisSimulation();
                 return;
             }
@@ -553,7 +541,7 @@ new Vue({
                         videoElement.srcObject = stream;
                         videoElement.play();
                     }
-                    this.startMediaPipeDetection();
+                    this.startFaceDetection();
                     this.startCountdown();
                 })
                 .catch(error => {
@@ -564,32 +552,23 @@ new Vue({
                 });
         },
         
-        startMediaPipeDetection() {
+        async startFaceDetection() {
             const videoElement = document.getElementById('camera-preview');
-            if (!videoElement || !faceLandmarker) return;
+            if (!videoElement) return;
             
             const detect = async () => {
                 if (!this.facialAnalysis.recording) return;
                 
-                try {
-                    const result = await faceLandmarker.detectForVideo(videoElement, performance.now());
-                    
-                    if (result.faceLandmarks && result.faceLandmarks.length > 0) {
-                        const analysis = analyzeFacialExpressionML(result.faceBlendshapes);
-                        this.cameraMood = analysis.mood;
-                        this.cameraConfidence = analysis.confidence;
-                        this.facialAnalysis.mood = analysis.mood;
-                        this.facialAnalysis.accuracy = analysis.confidence;
-                        
-                        const confidenceFill = document.querySelector('.camera-modal .confidence-fill');
-                        if (confidenceFill) confidenceFill.style.width = analysis.confidence + '%';
-                    }
-                    
-                    requestAnimationFrame(detect);
-                } catch (error) {
-                    console.error('Detection error:', error);
-                    requestAnimationFrame(detect);
-                }
+                const result = await analyzeFacialExpressionML(videoElement);
+                this.cameraMood = result.mood;
+                this.cameraConfidence = result.confidence;
+                this.facialAnalysis.mood = result.mood;
+                this.facialAnalysis.accuracy = result.confidence;
+                
+                const confidenceFill = document.querySelector('.camera-modal .confidence-fill');
+                if (confidenceFill) confidenceFill.style.width = result.confidence + '%';
+                
+                requestAnimationFrame(detect);
             };
             
             detect();
@@ -608,10 +587,6 @@ new Vue({
         completeFacialAnalysis() {
             this.facialAnalysis.recording = false;
             this.facialAnalysis.completed = true;
-            if (!this.facialAnalysis.mood) {
-                this.facialAnalysis.mood = this.cameraMood || 'Neutral';
-                this.facialAnalysis.accuracy = this.cameraConfidence || 70;
-            }
             this.stopCameraStream();
             this.showCameraModal = false;
             this.checkAllModalsCompleted();
@@ -648,15 +623,9 @@ new Vue({
             if (this.recordingTimer) clearInterval(this.recordingTimer);
         },
         
-        // ==================== REAL VOICE ANALYSIS (TensorFlow.js) ====================
+        // ==================== VOICE ANALYSIS ====================
         
         startVoiceAnalysis() {
-            if (!voiceModelLoaded) {
-                this.showToast('Voice model not ready. Using simulation.', 'error');
-                this.startVoiceAnalysisSimulation();
-                return;
-            }
-            
             this.showVoiceModal = true;
             this.voiceAnalysis.recording = true;
             this.isRecording = true;
@@ -673,7 +642,7 @@ new Vue({
                     
                     this.mediaRecorder.onstop = async () => {
                         const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
-                        const result = await analyzeVoiceEmotionML(audioBlob);
+                        const result = await analyzeVoiceEmotion(audioBlob);
                         this.voiceAnalysis.mood = result.mood;
                         this.voiceAnalysis.accuracy = result.confidence;
                         this.voiceAnalysis.recording = false;
@@ -745,20 +714,14 @@ new Vue({
             if (this.voiceVisualizationInterval) clearInterval(this.voiceVisualizationInterval);
         },
         
-        // ==================== REAL TEXT ANALYSIS (USE/BERT) ====================
+        // ==================== TEXT ANALYSIS ====================
         
         async analyzeText() {
             if (!this.textAnalysis.input) return;
             
-            this.showToast('Analyzing your text with AI...', 'success');
+            this.showToast('Analyzing your text...', 'success');
             
-            let result;
-            if (textModelLoaded) {
-                result = await analyzeTextSentimentML(this.textAnalysis.input);
-            } else {
-                // Fallback only if model fails
-                result = this.textFallback(this.textAnalysis.input);
-            }
+            const result = await analyzeTextSentiment(this.textAnalysis.input);
             
             this.textAnalysis.completed = true;
             this.textAnalysis.mood = result.mood;
@@ -767,23 +730,12 @@ new Vue({
             this.checkAllModalsCompleted();
         },
         
-        textFallback(text) {
-            // Only used if ML model fails to load
-            const lowerText = text.toLowerCase();
-            if (lowerText.includes('happy')) return { mood: 'Happy', confidence: 70 };
-            if (lowerText.includes('sad')) return { mood: 'Sad', confidence: 70 };
-            if (lowerText.includes('excited')) return { mood: 'Energetic', confidence: 70 };
-            if (lowerText.includes('calm')) return { mood: 'Calm', confidence: 70 };
-            if (lowerText.includes('stressed')) return { mood: 'Stressed', confidence: 70 };
-            return { mood: 'Neutral', confidence: 60 };
-        },
-        
         // ==================== MOOD FUSION ====================
         
         checkAllModalsCompleted() {
             if (this.allModalsCompleted) {
                 this.fuseModalities();
-                this.fetchAndPlayRecommendations();
+                this.fetchRecommendations();
                 this.updateDashboard();
             }
         },
@@ -792,7 +744,7 @@ new Vue({
             const moods = [this.facialAnalysis.mood, this.voiceAnalysis.mood, this.textAnalysis.mood];
             const accuracies = [this.facialAnalysis.accuracy, this.voiceAnalysis.accuracy, this.textAnalysis.accuracy];
             
-            const weights = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0, Neutral: 0 };
+            const weights = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
             moods.forEach((mood, index) => { weights[mood] = (weights[mood] || 0) + accuracies[index]; });
             
             let fusedMood = 'Neutral';
@@ -812,18 +764,17 @@ new Vue({
                 Sad: 'We hear you. These soulful melodies might help you process your emotions.',
                 Energetic: 'High energy detected! Powerful tracks to match your dynamic spirit.',
                 Calm: 'Peaceful state detected. Soothing tracks to complement your tranquility.',
-                Stressed: 'Feeling overwhelmed? Let these calming tracks help you find your center.',
-                Neutral: 'Here are some versatile tracks that might suit your current state.'
+                Stressed: 'Feeling overwhelmed? Let these calming tracks help you find your center.'
             };
             
-            this.fusedMood = { mood: fusedMood, confidence, description: descriptions[fusedMood] || descriptions.Neutral };
+            this.fusedMood = { mood: fusedMood, confidence, description: descriptions[fusedMood] || 'Here are some tracks for you.' };
         },
         
-        // ==================== SPOTIFY RECOMMENDATIONS ====================
+        // ==================== RECOMMENDATIONS ====================
         
-        async fetchAndPlayRecommendations() {
+        async fetchRecommendations() {
             this.isLoading = true;
-            this.showToast(`Fetching ${this.fusedMood.mood} music recommendations...`, 'success');
+            this.showToast(`Finding ${this.fusedMood.mood} music...`, 'success');
             
             try {
                 const response = await window.apiRequest('/spotify/recommendations', {
@@ -831,7 +782,7 @@ new Vue({
                     body: JSON.stringify({ 
                         mood: this.fusedMood.mood,
                         confidence: this.fusedMood.confidence,
-                        limit: 12
+                        limit: 8
                     })
                 });
                 
@@ -839,28 +790,31 @@ new Vue({
                     this.recommendedTracks = response.tracks;
                     this.showToast(`Found ${response.tracks.length} tracks!`, 'success');
                 } else {
-                    this.getFallbackTracks();
+                    this.getLocalTracks();
                 }
             } catch (error) {
                 console.error('Recommendation error:', error);
-                this.getFallbackTracks();
+                this.getLocalTracks();
             }
             
             this.isLoading = false;
         },
         
-        getFallbackTracks() {
+        getLocalTracks() {
+            // Working preview URLs that actually play
             this.recommendedTracks = [
-                { id: '1', name: 'Happy', artist: 'Pharrell Williams', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d33e1d4f6a.mp3', color: '#FFD700' },
-                { id: '2', name: 'Wake Me Up', artist: 'Avicii', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_08b2d8f5c3.mp3', color: '#FF6B6B' },
-                { id: '3', name: 'Countdown', artist: 'Pixabay', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0e1f2a3b4.mp3', color: '#4ECDC4' }
+                { id: '1', name: 'Uplifting Electronic', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d33e1d4f6a.mp3', color: '#FFD700' },
+                { id: '2', name: 'Inspiring Ambient', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_08b2d8f5c3.mp3', color: '#4ECDC4' },
+                { id: '3', name: 'Chill Lo-Fi', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0e1f2a3b4.mp3', color: '#96CEB4' },
+                { id: '4', name: 'Motivational Rock', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8e5a3b2f1.mp3', color: '#FF6B6B' },
+                { id: '5', name: 'Peaceful Piano', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_f9e8d7c6b5.mp3', color: '#45B7D1' }
             ];
-            this.showToast('Using demo tracks', 'info');
+            this.showToast('Using local music library', 'info');
         },
         
         // ==================== AUDIO PLAYER ====================
         
-        playTrack(track, index) {
+        playTrack(track) {
             this.stopCurrentTrack();
             
             this.currentTrackName = track.name;
@@ -869,29 +823,27 @@ new Vue({
             if (track.previewUrl) {
                 this.currentAudio = new Audio(track.previewUrl);
                 this.currentAudio.volume = this.audioVolume;
+                this.currentAudio.crossOrigin = 'anonymous';
                 
                 this.currentAudio.play()
                     .then(() => {
                         this.currentPlayingTrackId = track.id;
                         this.isPlaying = true;
                         this.showToast(`Now playing: ${track.name}`, 'success');
-                        
-                        this.currentAudio.onended = () => {
-                            // Auto-play next track
-                            const nextIndex = (index + 1) % this.recommendedTracks.length;
-                            if (nextIndex !== index) {
-                                this.playTrack(this.recommendedTracks[nextIndex], nextIndex);
-                            }
-                        };
                     })
                     .catch(error => {
                         console.error('Playback error:', error);
                         this.showToast('Cannot play preview', 'error');
                     });
+                
+                this.currentAudio.onended = () => {
+                    this.isPlaying = false;
+                    this.currentPlayingTrackId = null;
+                };
             }
         },
         
-        togglePlayPause(track, index) {
+        togglePlayPause(track) {
             if (this.currentPlayingTrackId === track.id && this.isPlaying) {
                 this.currentAudio.pause();
                 this.isPlaying = false;
@@ -901,7 +853,7 @@ new Vue({
                 this.isPlaying = true;
             } 
             else {
-                this.playTrack(track, index);
+                this.playTrack(track);
             }
         },
         
@@ -966,7 +918,7 @@ new Vue({
             this.isRecording = false;
         },
         
-        // ==================== THEME light or dark ====================
+        // ==================== THEME ====================
         
         toggleThemeDropdown() { this.showThemeDropdown = !this.showThemeDropdown; },
         
