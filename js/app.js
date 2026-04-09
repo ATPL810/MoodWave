@@ -966,7 +966,7 @@ new Vue({
             this.isRecording = false;
         },
         
-        // ==================== THEME ====================
+        // ==================== THEME light or dark ====================
         
         toggleThemeDropdown() { this.showThemeDropdown = !this.showThemeDropdown; },
         
