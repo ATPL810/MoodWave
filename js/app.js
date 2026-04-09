@@ -1,42 +1,39 @@
-// ==================== FACE DETECTION: face-api.js (LOCAL MODELS) ====================
+// ==================== FACE DETECTION: face-api.js (CDN MODELS) ====================
 
 let faceModelsLoaded = false;
 
 async function initFaceDetection() {
     try {
-        // Use local models folder - CHANGE THIS PATH TO YOUR ACTUAL PATH
-        const MODEL_URL = '/models/';  // or './models/' or 'https://yourdomain.com/models/'
+        // Use GitHub CDN - no local files needed!
+        const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
         
-        console.log("Loading face models from:", MODEL_URL);
+        console.log("Loading face models from CDN...");
         
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
         await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
         
         faceModelsLoaded = true;
-        console.log("✅ Face detection models loaded successfully");
+        console.log("✅ Face detection models loaded");
         return true;
     } catch (error) {
-        console.error("Face detection init error:", error);
+        console.error("Face detection error:", error);
         return false;
     }
 }
 
-// Analyze facial expression using face-api.js (REAL ML MODEL)
 async function analyzeFacialExpressionML(videoElement) {
     if (!faceModelsLoaded || !videoElement) {
         return { mood: "Neutral", confidence: 50 };
     }
     
     try {
-        // REAL machine learning inference
         const detections = await faceapi.detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions())
             .withFaceExpressions();
         
         if (detections && detections.expressions) {
             const expressions = detections.expressions;
             
-            // Find dominant expression from model output
             let dominantExpression = "neutral";
             let maxScore = 0;
             for (const [expr, score] of Object.entries(expressions)) {
@@ -46,7 +43,6 @@ async function analyzeFacialExpressionML(videoElement) {
                 }
             }
             
-            // Map expressions to moods
             const moodMap = {
                 happy: "Happy",
                 sad: "Sad",
@@ -60,8 +56,6 @@ async function analyzeFacialExpressionML(videoElement) {
             const mood = moodMap[dominantExpression] || "Neutral";
             const confidence = Math.min(95, Math.round(maxScore * 100));
             
-            console.log(`Detected: ${dominantExpression} (${confidence}%) → ${mood}`);
-            
             return { mood, confidence };
         }
     } catch (error) {
@@ -71,7 +65,7 @@ async function analyzeFacialExpressionML(videoElement) {
     return { mood: "Neutral", confidence: 50 };
 }
 
-// ==================== VOICE ANALYSIS: Web Audio API with REAL FEATURE EXTRACTION ====================
+// ==================== VOICE ANALYSIS ====================
 
 async function analyzeVoiceEmotion(audioBlob) {
     return new Promise((resolve) => {
@@ -83,11 +77,7 @@ async function analyzeVoiceEmotion(audioBlob) {
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 
                 const channelData = audioBuffer.getChannelData(0);
-                
-                // Extract REAL audio features
                 const features = extractAudioFeatures(channelData, audioBuffer.sampleRate);
-                
-                // Classify based on features
                 const result = classifyMoodFromAudioFeatures(features);
                 
                 await audioContext.close();
@@ -102,20 +92,14 @@ async function analyzeVoiceEmotion(audioBlob) {
 }
 
 function extractAudioFeatures(samples, sampleRate) {
-    // Calculate energy (volume/loudness)
     let energy = 0;
-    let rms = 0;
     let zeroCrossings = 0;
-    let pitchVariation = 0;
     
     for (let i = 0; i < samples.length; i++) {
         energy += samples[i] * samples[i];
-        rms += Math.abs(samples[i]);
     }
     energy = Math.sqrt(energy / samples.length);
-    rms = rms / samples.length;
     
-    // Zero crossing rate (speech rate / activity)
     for (let i = 1; i < samples.length; i++) {
         if (samples[i] * samples[i-1] < 0) {
             zeroCrossings++;
@@ -123,75 +107,27 @@ function extractAudioFeatures(samples, sampleRate) {
     }
     zeroCrossings = zeroCrossings / samples.length;
     
-    // Pitch variation (tremor/stress indicator)
-    for (let i = 2; i < Math.min(samples.length, 2000); i++) {
-        pitchVariation += Math.abs(samples[i] - samples[i-1]);
-    }
-    pitchVariation = pitchVariation / Math.min(samples.length, 2000);
-    
-    // Spectral centroid (brightness of sound)
-    let spectralCentroid = 0;
-    let totalMagnitude = 0;
-    for (let i = 0; i < Math.min(1024, samples.length); i++) {
-        const magnitude = Math.abs(samples[i]);
-        spectralCentroid += i * magnitude;
-        totalMagnitude += magnitude;
-    }
-    spectralCentroid = totalMagnitude > 0 ? spectralCentroid / totalMagnitude / 1024 : 0.5;
-    
-    return {
-        energy,
-        rms,
-        zeroCrossings,
-        pitchVariation,
-        spectralCentroid
-    };
+    return { energy, zeroCrossings };
 }
 
 function classifyMoodFromAudioFeatures(features) {
-    let scores = {
-        Happy: 0,
-        Sad: 0,
-        Energetic: 0,
-        Calm: 0,
-        Stressed: 0
-    };
+    let scores = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
     
-    // Energy-based classification
-    if (features.energy > 0.15) {
-        scores.Energetic += features.energy * 40;
-        scores.Happy += features.energy * 25;
+    if (features.energy > 0.12) {
+        scores.Energetic += features.energy * 50;
+        scores.Happy += features.energy * 30;
     } else if (features.energy < 0.04) {
-        scores.Calm += (0.04 - features.energy) * 45;
-        scores.Sad += (0.04 - features.energy) * 20;
+        scores.Calm += (0.04 - features.energy) * 50;
+        scores.Sad += (0.04 - features.energy) * 25;
     }
     
-    // Zero crossing based classification
     if (features.zeroCrossings > 0.08) {
-        scores.Energetic += features.zeroCrossings * 35;
-        scores.Stressed += features.zeroCrossings * 15;
+        scores.Energetic += features.zeroCrossings * 40;
+        scores.Stressed += features.zeroCrossings * 20;
     } else if (features.zeroCrossings < 0.03) {
         scores.Calm += (0.03 - features.zeroCrossings) * 35;
     }
     
-    // Pitch variation (stress indicator)
-    if (features.pitchVariation > 0.025) {
-        scores.Stressed += features.pitchVariation * 40;
-        scores.Energetic += features.pitchVariation * 15;
-    } else {
-        scores.Calm += (0.025 - features.pitchVariation) * 30;
-    }
-    
-    // Spectral centroid (brightness)
-    if (features.spectralCentroid > 0.6) {
-        scores.Happy += features.spectralCentroid * 20;
-        scores.Energetic += features.spectralCentroid * 15;
-    } else if (features.spectralCentroid < 0.3) {
-        scores.Sad += (0.3 - features.spectralCentroid) * 20;
-        scores.Calm += (0.3 - features.spectralCentroid) * 15;
-    }
-    
-    // Find dominant mood
     let dominantMood = "Neutral";
     let maxScore = 0;
     for (const [mood, score] of Object.entries(scores)) {
@@ -201,25 +137,21 @@ function classifyMoodFromAudioFeatures(features) {
         }
     }
     
-    // Calculate confidence (30-95 range)
-    let confidence = Math.min(92, Math.max(35, Math.round(maxScore)));
-    
-    console.log(`Voice analysis: ${dominantMood} (${confidence}%) - Energy:${features.energy.toFixed(3)} ZCR:${features.zeroCrossings.toFixed(3)}`);
-    
+    let confidence = Math.min(90, Math.max(40, Math.round(maxScore)));
     return { mood: dominantMood, confidence };
 }
 
-// ==================== TEXT ANALYSIS: Simple but Effective ====================
+// ==================== TEXT ANALYSIS ====================
 
 async function analyzeTextSentiment(text) {
     const lowerText = text.toLowerCase();
     
     const moodKeywords = {
-        Happy: ["happy", "great", "good", "wonderful", "amazing", "excited", "joy", "love", "fantastic", "awesome", "beautiful", "perfect", "glad", "delighted"],
-        Sad: ["sad", "down", "blue", "depressed", "unhappy", "miserable", "lonely", "heartbroken", "crying", "hurt", "pain", "grief", "sorrow"],
-        Energetic: ["energetic", "excited", "pumped", "thrilled", "dynamic", "active", "lively", "enthusiastic", "ready", "power", "strong"],
-        Calm: ["calm", "relaxed", "peaceful", "serene", "tranquil", "chill", "quiet", "meditative", "soothing", "gentle", "still"],
-        Stressed: ["stressed", "anxious", "worried", "nervous", "overwhelmed", "tense", "frustrated", "panic", "pressure", "anxiety"]
+        Happy: ["happy", "great", "good", "wonderful", "amazing", "excited", "joy", "love", "fantastic", "awesome"],
+        Sad: ["sad", "down", "blue", "depressed", "unhappy", "miserable", "lonely", "heartbroken", "crying"],
+        Energetic: ["energetic", "excited", "pumped", "thrilled", "dynamic", "active", "lively", "enthusiastic"],
+        Calm: ["calm", "relaxed", "peaceful", "serene", "tranquil", "chill", "quiet", "meditative"],
+        Stressed: ["stressed", "anxious", "worried", "nervous", "overwhelmed", "tense", "frustrated", "panic"]
     };
     
     let scores = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
@@ -227,22 +159,14 @@ async function analyzeTextSentiment(text) {
     for (const [mood, keywords] of Object.entries(moodKeywords)) {
         for (const keyword of keywords) {
             if (lowerText.includes(keyword)) {
-                let score = 2;
-                // Check for intensity
-                if (lowerText.includes("very " + keyword) || lowerText.includes("extremely " + keyword)) {
-                    score = 4;
-                }
-                scores[mood] += score;
+                scores[mood] += 2;
             }
         }
     }
     
-    // Punctuation indicators
     if (text.includes("!")) scores.Energetic += 3;
     if (text.includes("...")) scores.Calm += 2;
-    if (text.includes("?")) scores.Stressed += 1;
     
-    // Find dominant mood
     let dominantMood = "Neutral";
     let maxScore = 0;
     for (const [mood, score] of Object.entries(scores)) {
@@ -252,11 +176,7 @@ async function analyzeTextSentiment(text) {
         }
     }
     
-    let confidence = 50;
-    if (maxScore > 0) {
-        confidence = Math.min(90, 55 + (maxScore * 3));
-    }
-    
+    let confidence = maxScore > 0 ? Math.min(90, 55 + maxScore * 3) : 50;
     return { mood: dominantMood, confidence };
 }
 
@@ -294,7 +214,6 @@ new Vue({
         fusedMood: { mood: '', confidence: 0, description: '' },
         recommendedTracks: [],
         
-        // Audio player
         currentAudio: null,
         currentPlayingTrackId: null,
         audioVolume: 0.7,
@@ -303,14 +222,12 @@ new Vue({
         currentTrackName: '',
         currentArtist: '',
         
-        // Camera
         cameraStream: null,
         showCameraModal: false,
         cameraMood: '',
         cameraConfidence: 0,
         detectedExpression: '',
         
-        // Voice
         showVoiceModal: false,
         voiceMood: '',
         voiceConfidence: 0,
@@ -320,11 +237,9 @@ new Vue({
         recordingTime: 0,
         recordingInterval: null,
         
-        // Status
         modelsReady: false,
         loadingMessage: 'Loading face detection model...',
         
-        // Theme
         darkMode: false,
         showThemeDropdown: false,
         showLogoutModal: false,
@@ -354,7 +269,7 @@ new Vue({
         this.loadThemePreference();
         this.checkAuth();
         
-        // Wait for face-api.js to be available
+        // Wait for face-api.js to load
         const waitForFaceApi = setInterval(() => {
             if (typeof faceapi !== 'undefined') {
                 clearInterval(waitForFaceApi);
@@ -362,13 +277,12 @@ new Vue({
             }
         }, 500);
         
-        // Timeout after 10 seconds
         setTimeout(() => {
             clearInterval(waitForFaceApi);
             if (!this.modelsReady) {
                 this.showToast('Face detection not available. Using simulation.', 'error');
             }
-        }, 10000);
+        }, 15000);
         
         document.addEventListener('click', (e) => {
             if (this.showThemeDropdown && !e.target.closest('.theme-dropdown')) {
@@ -389,7 +303,6 @@ new Vue({
             }
         },
         
-        // ==================== NAVIGATION ====================
         switchToRegister() { this.currentPage = 'register'; this.clearForms(); },
         switchToLogin() { this.currentPage = 'login'; this.clearForms(); },
         navigateTo(page) { 
@@ -405,7 +318,6 @@ new Vue({
             };
         },
         
-        // ==================== AUTHENTICATION ====================
         async handleLogin() {
             if (!this.login.username || !this.login.password) {
                 this.showToast('Please fill in all fields', 'error');
@@ -720,7 +632,6 @@ new Vue({
             if (!this.textAnalysis.input) return;
             
             this.showToast('Analyzing your text...', 'success');
-            
             const result = await analyzeTextSentiment(this.textAnalysis.input);
             
             this.textAnalysis.completed = true;
@@ -801,15 +712,18 @@ new Vue({
         },
         
         getLocalTracks() {
-            // Working preview URLs that actually play
+            // Working audio URLs from SoundHelix (royalty-free, always available)
             this.recommendedTracks = [
-                { id: '1', name: 'Uplifting Electronic', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d33e1d4f6a.mp3', color: '#FFD700' },
-                { id: '2', name: 'Inspiring Ambient', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_08b2d8f5c3.mp3', color: '#4ECDC4' },
-                { id: '3', name: 'Chill Lo-Fi', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0e1f2a3b4.mp3', color: '#96CEB4' },
-                { id: '4', name: 'Motivational Rock', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8e5a3b2f1.mp3', color: '#FF6B6B' },
-                { id: '5', name: 'Peaceful Piano', artist: 'Pixabay Music', previewUrl: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_f9e8d7c6b5.mp3', color: '#45B7D1' }
+                { id: '1', name: 'Happy Melody', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', color: '#FFD700' },
+                { id: '2', name: 'Calm Piano', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3', color: '#96CEB4' },
+                { id: '3', name: 'Energetic Rock', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3', color: '#FF6B6B' },
+                { id: '4', name: 'Relaxing Ambient', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3', color: '#4ECDC4' },
+                { id: '5', name: 'Upbeat Pop', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3', color: '#FFD700' },
+                { id: '6', name: 'Chill Lo-Fi', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3', color: '#96CEB4' },
+                { id: '7', name: 'Motivational', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3', color: '#FF6B6B' },
+                { id: '8', name: 'Peaceful', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3', color: '#45B7D1' }
             ];
-            this.showToast('Using local music library', 'info');
+            this.showToast('Using royalty-free music library', 'info');
         },
         
         // ==================== AUDIO PLAYER ====================
