@@ -1,7 +1,82 @@
-// ==================== FACE DETECTION - IMPROVED ====================
+// ==================== SPOTIFY PLAYBACK ====================
+let spotifyPlayer = null;
+let spotifyDeviceId = null;
+let isSpotifyReady = false;
+
+// Initialize Spotify Player
+async function initSpotifyPlayer(token) {
+    return new Promise((resolve) => {
+        window.onSpotifyWebPlaybackSDKReady = () => {
+            spotifyPlayer = new Spotify.Player({
+                name: 'MoodWave Music Player',
+                getOAuthToken: cb => { cb(token); },
+                volume: 0.7
+            });
+            
+            spotifyPlayer.addListener('ready', ({ device_id }) => {
+                console.log('✅ Spotify Player ready with Device ID:', device_id);
+                spotifyDeviceId = device_id;
+                isSpotifyReady = true;
+                resolve(true);
+            });
+            
+            spotifyPlayer.addListener('not_ready', ({ device_id }) => {
+                console.log('⚠️ Spotify Player not ready:', device_id);
+                isSpotifyReady = false;
+            });
+            
+            spotifyPlayer.addListener('player_state_changed', (state) => {
+                if (state && state.track_window) {
+                    console.log('Now playing:', state.track_window.current_track.name);
+                }
+            });
+            
+            spotifyPlayer.connect();
+        };
+        
+        // Timeout after 10 seconds
+        setTimeout(() => resolve(false), 10000);
+    });
+}
+
+// Play track using Spotify Web Playback SDK
+async function playSpotifyTrack(trackUri, token) {
+    if (!isSpotifyReady || !spotifyDeviceId) {
+        console.log('Spotify player not ready, trying to initialize...');
+        await initSpotifyPlayer(token);
+        if (!isSpotifyReady) {
+            return false;
+        }
+    }
+    
+    try {
+        const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${spotifyDeviceId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                uris: [trackUri]
+            })
+        });
+        
+        if (response.ok) {
+            console.log('✅ Playing track:', trackUri);
+            return true;
+        } else {
+            console.error('Playback failed:', await response.text());
+            return false;
+        }
+    } catch (error) {
+        console.error('Playback error:', error);
+        return false;
+    }
+}
+
+// ==================== FACE DETECTION ====================
 
 let faceModelsLoaded = false;
-let detectionInterval = null;
 
 async function initFaceDetection() {
     try {
@@ -22,7 +97,7 @@ async function initFaceDetection() {
 
 async function analyzeFacialExpressionML(videoElement) {
     if (!faceModelsLoaded || !videoElement) {
-        return { mood: "Neutral", confidence: 50 };
+        return { mood: "Neutral", confidence: 50, valence: 0.5, energy: 0.5 };
     }
     
     try {
@@ -32,59 +107,72 @@ async function analyzeFacialExpressionML(videoElement) {
         if (detections && detections.expressions) {
             const expressions = detections.expressions;
             
-            // Get all expression scores
-            const expressionScores = {
-                happy: expressions.happy || 0,
-                sad: expressions.sad || 0,
-                angry: expressions.angry || 0,
-                fearful: expressions.fearful || 0,
-                disgusted: expressions.disgusted || 0,
-                surprised: expressions.surprised || 0,
-                neutral: expressions.neutral || 0
-            };
-            
-            // Find dominant expression
             let dominantExpression = "neutral";
             let maxScore = 0;
-            for (const [expr, score] of Object.entries(expressionScores)) {
+            for (const [expr, score] of Object.entries(expressions)) {
                 if (score > maxScore) {
                     maxScore = score;
                     dominantExpression = expr;
                 }
             }
             
-            // Map to moods with confidence weighting
+            // Map to moods with valence and energy values
             let mood = "Neutral";
+            let valence = 0.5;
+            let energy = 0.5;
             let confidence = Math.round(maxScore * 100);
             
-            if (dominantExpression === "happy") {
-                mood = "Happy";
-                confidence = Math.min(95, confidence + 10);
-            } else if (dominantExpression === "sad") {
-                mood = "Sad";
-                confidence = Math.min(90, confidence + 5);
-            } else if (dominantExpression === "angry" || dominantExpression === "fearful") {
-                mood = "Stressed";
-                confidence = Math.min(90, confidence + 15);
-            } else if (dominantExpression === "surprised") {
-                mood = "Energetic";
-                confidence = Math.min(90, confidence + 10);
-            } else if (dominantExpression === "neutral") {
-                mood = "Neutral";
-                confidence = Math.max(40, confidence);
+            switch(dominantExpression) {
+                case 'happy':
+                    mood = "Happy";
+                    valence = 0.85;
+                    energy = 0.7;
+                    confidence += 10;
+                    break;
+                case 'sad':
+                    mood = "Sad";
+                    valence = 0.2;
+                    energy = 0.3;
+                    confidence += 5;
+                    break;
+                case 'angry':
+                    mood = "Stressed";
+                    valence = 0.3;
+                    energy = 0.8;
+                    confidence += 15;
+                    break;
+                case 'fearful':
+                    mood = "Stressed";
+                    valence = 0.25;
+                    energy = 0.7;
+                    confidence += 10;
+                    break;
+                case 'surprised':
+                    mood = "Energetic";
+                    valence = 0.7;
+                    energy = 0.85;
+                    confidence += 10;
+                    break;
+                case 'neutral':
+                    mood = "Neutral";
+                    valence = 0.5;
+                    energy = 0.5;
+                    break;
             }
             
-            console.log(`Face: ${dominantExpression} (${confidence}%) → ${mood}`);
-            return { mood, confidence };
+            confidence = Math.min(95, Math.max(40, confidence));
+            
+            console.log(`Face: ${dominantExpression} → ${mood} (${confidence}%, valence:${valence}, energy:${energy})`);
+            return { mood, confidence, valence, energy };
         }
     } catch (error) {
         console.error("Expression detection error:", error);
     }
     
-    return { mood: "Neutral", confidence: 50 };
+    return { mood: "Neutral", confidence: 50, valence: 0.5, energy: 0.5 };
 }
 
-// ==================== VOICE ANALYSIS - IMPROVED ====================
+// ==================== VOICE ANALYSIS ====================
 
 async function analyzeVoiceEmotion(audioBlob) {
     return new Promise((resolve) => {
@@ -96,156 +184,122 @@ async function analyzeVoiceEmotion(audioBlob) {
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 
                 const channelData = audioBuffer.getChannelData(0);
-                const features = extractAdvancedAudioFeatures(channelData, audioBuffer.sampleRate);
-                const result = classifyAdvancedMoodFromFeatures(features);
+                const features = extractAudioFeatures(channelData, audioBuffer.sampleRate);
+                const result = classifyMoodFromFeatures(features);
                 
                 await audioContext.close();
-                console.log(`Voice: ${result.mood} (${result.confidence}%) - Energy:${features.energy.toFixed(3)} ZCR:${features.zcr.toFixed(3)}`);
+                console.log(`Voice: ${result.mood} (${result.confidence}%, valence:${result.valence}, energy:${result.energy})`);
                 resolve(result);
             } catch (error) {
                 console.error("Voice analysis error:", error);
-                resolve({ mood: "Neutral", confidence: 50 });
+                resolve({ mood: "Neutral", confidence: 50, valence: 0.5, energy: 0.5 });
             }
         };
         reader.readAsArrayBuffer(audioBlob);
     });
 }
 
-function extractAdvancedAudioFeatures(samples, sampleRate) {
+function extractAudioFeatures(samples, sampleRate) {
     let energy = 0;
-    let rms = 0;
     let zcr = 0;
-    let spectralCentroid = 0;
-    let maxAmplitude = 0;
+    let rms = 0;
     
     for (let i = 0; i < samples.length; i++) {
-        const amp = Math.abs(samples[i]);
         energy += samples[i] * samples[i];
-        rms += amp;
-        if (amp > maxAmplitude) maxAmplitude = amp;
+        rms += Math.abs(samples[i]);
     }
     energy = Math.sqrt(energy / samples.length);
     rms = rms / samples.length;
     
-    // Zero crossing rate
     for (let i = 1; i < samples.length; i++) {
         if (samples[i] * samples[i-1] < 0) zcr++;
     }
     zcr = zcr / samples.length;
     
-    // Simple spectral centroid
-    for (let i = 0; i < Math.min(1024, samples.length); i++) {
-        spectralCentroid += i * Math.abs(samples[i]);
-    }
-    spectralCentroid = spectralCentroid / (Math.min(1024, samples.length) || 1);
-    spectralCentroid = spectralCentroid / 1024;
-    
-    return { energy, rms, zcr, spectralCentroid, maxAmplitude };
+    return { energy, zcr, rms };
 }
 
-function classifyAdvancedMoodFromFeatures(features) {
-    let scores = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
+function classifyMoodFromFeatures(features) {
+    let mood = "Neutral";
+    let confidence = 50;
+    let valence = 0.5;
+    let energy = features.energy;
     
-    // Energy-based scoring
-    if (features.energy > 0.1) {
-        scores.Energetic += features.energy * 60;
-        scores.Happy += features.energy * 30;
-    } else if (features.energy < 0.03) {
-        scores.Calm += (0.03 - features.energy) * 70;
-        scores.Sad += (0.03 - features.energy) * 30;
+    if (features.energy > 0.12) {
+        if (features.zcr > 0.08) {
+            mood = "Energetic";
+            valence = 0.7;
+            confidence = 75 + (features.energy - 0.12) * 100;
+        } else {
+            mood = "Happy";
+            valence = 0.75;
+            confidence = 70 + features.energy * 80;
+        }
+    } else if (features.energy < 0.04) {
+        if (features.zcr < 0.03) {
+            mood = "Calm";
+            valence = 0.55;
+            confidence = 70 + (0.04 - features.energy) * 100;
+        } else {
+            mood = "Sad";
+            valence = 0.3;
+            confidence = 65 + (0.04 - features.energy) * 80;
+        }
     } else {
-        scores.Neutral = 40;
-    }
-    
-    // ZCR-based scoring
-    if (features.zcr > 0.07) {
-        scores.Energetic += features.zcr * 50;
-        scores.Happy += features.zcr * 25;
-    } else if (features.zcr < 0.02) {
-        scores.Calm += (0.02 - features.zcr) * 60;
-        scores.Sad += (0.02 - features.zcr) * 20;
-    }
-    
-    // Spectral centroid
-    if (features.spectralCentroid > 0.5) {
-        scores.Energetic += 20;
-        scores.Happy += 15;
-    } else if (features.spectralCentroid < 0.2) {
-        scores.Calm += 25;
-        scores.Sad += 15;
-    }
-    
-    // Find dominant mood
-    let dominantMood = "Neutral";
-    let maxScore = 0;
-    for (const [mood, score] of Object.entries(scores)) {
-        if (score > maxScore) {
-            maxScore = score;
-            dominantMood = mood;
+        if (features.zcr > 0.07) {
+            mood = "Stressed";
+            valence = 0.4;
+            energy = 0.6;
+            confidence = 65;
         }
     }
     
-    // Calculate confidence (30-95 range)
-    let confidence = Math.min(92, Math.max(45, Math.round(maxScore)));
-    if (dominantMood === "Neutral") confidence = Math.min(70, confidence);
-    
-    return { mood: dominantMood, confidence };
+    confidence = Math.min(90, Math.max(45, Math.round(confidence)));
+    return { mood, confidence, valence, energy };
 }
 
-// ==================== TEXT ANALYSIS - IMPROVED ====================
+// ==================== TEXT ANALYSIS ====================
 
 async function analyzeTextSentiment(text) {
     const lowerText = text.toLowerCase();
     
-    // Expanded keyword database with weights
     const moodKeywords = {
-        Happy: { words: ["happy", "great", "good", "wonderful", "amazing", "excited", "joy", "love", "fantastic", "awesome", "beautiful", "perfect", "glad", "delighted", "cheerful", "joyful"], weight: 2 },
-        Sad: { words: ["sad", "down", "blue", "depressed", "unhappy", "miserable", "lonely", "heartbroken", "crying", "hurt", "pain", "grief", "sorrow", "gloomy", "hopeless"], weight: 2 },
-        Energetic: { words: ["energetic", "excited", "pumped", "thrilled", "dynamic", "active", "lively", "enthusiastic", "ready", "power", "strong", "unstoppable", "hyped"], weight: 1.8 },
-        Calm: { words: ["calm", "relaxed", "peaceful", "serene", "tranquil", "chill", "quiet", "meditative", "soothing", "gentle", "still", "restful", "mellow"], weight: 1.8 },
-        Stressed: { words: ["stressed", "anxious", "worried", "nervous", "overwhelmed", "tense", "frustrated", "panic", "pressure", "anxiety", "burnout", "exhausted", "drained"], weight: 2 }
+        Happy: { words: ["happy", "great", "good", "wonderful", "amazing", "excited", "joy", "love", "fantastic", "awesome"], valence: 0.85, energy: 0.7 },
+        Sad: { words: ["sad", "down", "blue", "depressed", "unhappy", "miserable", "lonely", "heartbroken"], valence: 0.2, energy: 0.3 },
+        Energetic: { words: ["energetic", "excited", "pumped", "thrilled", "dynamic", "active", "lively"], valence: 0.65, energy: 0.85 },
+        Calm: { words: ["calm", "relaxed", "peaceful", "serene", "tranquil", "chill", "quiet"], valence: 0.55, energy: 0.25 },
+        Stressed: { words: ["stressed", "anxious", "worried", "nervous", "overwhelmed", "tense", "frustrated"], valence: 0.35, energy: 0.6 }
     };
     
     let scores = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
-    let totalMatches = 0;
+    let valenceSum = 0;
+    let energySum = 0;
+    let matchCount = 0;
     
     for (const [mood, data] of Object.entries(moodKeywords)) {
         for (const word of data.words) {
             if (lowerText.includes(word)) {
-                let score = data.weight;
-                
-                // Check for intensity
-                if (lowerText.includes("very " + word) || lowerText.includes("extremely " + word) || lowerText.includes("so " + word)) {
-                    score *= 1.5;
-                }
-                if (lowerText.includes("not " + word) || lowerText.includes("don't " + word)) {
-                    score *= 0.3;
-                }
-                
-                scores[mood] += score;
-                totalMatches++;
+                scores[mood] += 2;
+                valenceSum += data.valence;
+                energySum += data.energy;
+                matchCount++;
             }
         }
     }
     
-    // Punctuation and emoji indicators
     if (text.includes("!")) {
-        scores.Energetic += 5;
-        scores.Happy += 3;
+        scores.Energetic += 3;
+        valenceSum += 0.7;
+        energySum += 0.8;
+        matchCount++;
     }
     if (text.includes("...")) {
-        scores.Calm += 4;
-        scores.Sad += 2;
-    }
-    if (text.includes("?")) {
-        scores.Stressed += 3;
-    }
-    if (text.toUpperCase() === text && text.length > 5) {
-        scores.Energetic += 8;
-        scores.Stressed += 5;
+        scores.Calm += 2;
+        valenceSum += 0.5;
+        energySum += 0.3;
+        matchCount++;
     }
     
-    // Find dominant mood
     let dominantMood = "Neutral";
     let maxScore = 0;
     for (const [mood, score] of Object.entries(scores)) {
@@ -255,23 +309,12 @@ async function analyzeTextSentiment(text) {
         }
     }
     
-    // Calculate confidence based on matches and text length
-    const wordCount = text.split(/\s+/).length;
-    let confidence = 50;
+    const valence = matchCount > 0 ? valenceSum / matchCount : 0.5;
+    const energy = matchCount > 0 ? energySum / matchCount : 0.5;
+    let confidence = maxScore > 0 ? Math.min(90, 55 + maxScore * 3) : 50;
     
-    if (totalMatches > 0) {
-        const matchDensity = Math.min(1, totalMatches / Math.max(5, wordCount));
-        confidence = Math.min(92, 55 + (matchDensity * 35) + (maxScore * 2));
-    } else if (wordCount > 10) {
-        // Longer text with no keywords - likely neutral
-        confidence = 55;
-        dominantMood = "Neutral";
-    } else {
-        confidence = 45;
-    }
-    
-    console.log(`Text: ${dominantMood} (${Math.round(confidence)}%) - Matches: ${totalMatches}`);
-    return { mood: dominantMood, confidence: Math.round(confidence) };
+    console.log(`Text: ${dominantMood} (${confidence}%, valence:${valence.toFixed(2)}, energy:${energy.toFixed(2)})`);
+    return { mood: dominantMood, confidence, valence, energy };
 }
 
 // ==================== VUE APP ====================
@@ -284,6 +327,7 @@ new Vue({
         currentPage: 'login',
         currentUser: '',
         userId: '',
+        spotifyToken: null,
         
         login: { username: '', password: '', showPassword: false },
         register: {
@@ -296,16 +340,16 @@ new Vue({
         moodHistory: [],
         
         facialAnalysis: {
-            recording: false, completed: false, countdown: 10, mood: '', accuracy: 0
+            recording: false, completed: false, countdown: 10, mood: '', accuracy: 0, valence: 0.5, energy: 0.5
         },
         voiceAnalysis: {
-            recording: false, completed: false, mood: '', accuracy: 0
+            recording: false, completed: false, mood: '', accuracy: 0, valence: 0.5, energy: 0.5
         },
         textAnalysis: {
-            input: '', completed: false, mood: '', accuracy: 0
+            input: '', completed: false, mood: '', accuracy: 0, valence: 0.5, energy: 0.5
         },
         
-        fusedMood: { mood: '', confidence: 0, description: '' },
+        fusedMood: { mood: '', confidence: 0, valence: 0.5, energy: 0.5, description: '' },
         recommendedTracks: [],
         
         currentAudio: null,
@@ -320,7 +364,6 @@ new Vue({
         showCameraModal: false,
         cameraMood: '',
         cameraConfidence: 0,
-        detectedExpression: '',
         
         showVoiceModal: false,
         voiceMood: '',
@@ -333,6 +376,7 @@ new Vue({
         
         modelsReady: false,
         isLoadingRecommendations: false,
+        isSpotifyPlaying: false,
         
         darkMode: false,
         showThemeDropdown: false,
@@ -369,16 +413,12 @@ new Vue({
                 clearInterval(waitForFaceApi);
                 this.modelsReady = await initFaceDetection();
                 if (this.modelsReady) {
-                    this.showToast('Face detection ready! Look at the camera.', 'success');
-                } else {
-                    this.showToast('Face detection unavailable. Using simulation.', 'error');
+                    this.showToast('Face detection ready!', 'success');
                 }
             }
         }, 500);
         
-        setTimeout(() => {
-            clearInterval(waitForFaceApi);
-        }, 15000);
+        setTimeout(() => clearInterval(waitForFaceApi), 15000);
         
         document.addEventListener('click', (e) => {
             if (this.showThemeDropdown && !e.target.closest('.theme-dropdown')) {
@@ -415,10 +455,15 @@ new Vue({
                     body: JSON.stringify({ username: this.login.username, password: this.login.password })
                 });
                 if (data.success) {
+                    this.spotifyToken = data.token;
                     window.setAuthToken(data.token);
                     localStorage.setItem('user', JSON.stringify(data.user));
                     this.currentUser = data.user.username;
                     this.userId = data.user.id;
+                    
+                    // Initialize Spotify player
+                    await initSpotifyPlayer(data.token);
+                    
                     this.showToast('Login successful!', 'success');
                     this.startSessionTimer();
                     await this.fetchMoodHistory();
@@ -460,7 +505,7 @@ new Vue({
                     })
                 });
                 if (data.success) {
-                    this.showToast('Registration successful! Redirecting to login...', 'success');
+                    this.showToast('Registration successful!', 'success');
                     setTimeout(() => { this.clearForms(); this.currentPage = 'login'; this.isLoading = false; }, 2000);
                 }
             } catch (error) {
@@ -501,7 +546,7 @@ new Vue({
             this.showLogoutModal = false;
             try { await window.apiRequest('/auth/logout', { method: 'POST' }); } catch(e) {}
             if (sessionTimer) clearInterval(sessionTimer);
-            this.stopCurrentTrack();
+            if (spotifyPlayer) spotifyPlayer.disconnect();
             if (this.cameraStream) this.stopCameraStream();
             window.clearAuthToken();
             localStorage.removeItem('user');
@@ -521,17 +566,9 @@ new Vue({
         // ==================== FACE DETECTION ====================
         
         startFacialAnalysis() {
-            if (!this.modelsReady) {
-                this.showToast('Face model loading, please wait...', 'error');
-                this.startFacialAnalysisSimulation();
-                return;
-            }
-            
             this.showCameraModal = true;
             this.facialAnalysis.recording = true;
             this.facialAnalysis.countdown = 10;
-            this.cameraMood = '';
-            this.cameraConfidence = 0;
             this.faceDetectionRunning = true;
             
             navigator.mediaDevices.getUserMedia({ video: true })
@@ -563,18 +600,13 @@ new Vue({
                 const result = await analyzeFacialExpressionML(videoElement);
                 this.cameraMood = result.mood;
                 this.cameraConfidence = result.confidence;
-                this.detectedExpression = result.mood;
                 this.facialAnalysis.mood = result.mood;
                 this.facialAnalysis.accuracy = result.confidence;
+                this.facialAnalysis.valence = result.valence;
+                this.facialAnalysis.energy = result.energy;
                 
-                // Update UI
-                const moodSpan = document.querySelector('.detected-mood');
                 const confidenceFill = document.querySelector('.camera-modal .confidence-fill');
-                const confidenceText = document.querySelector('.confidence-text');
-                
-                if (moodSpan) moodSpan.textContent = result.mood;
                 if (confidenceFill) confidenceFill.style.width = result.confidence + '%';
-                if (confidenceText) confidenceText.textContent = result.confidence + '%';
                 
                 requestAnimationFrame(detect);
             };
@@ -585,9 +617,6 @@ new Vue({
         startCountdown() {
             this.recordingTimer = setInterval(() => {
                 this.facialAnalysis.countdown--;
-                const countdownEl = document.querySelector('.countdown-number');
-                if (countdownEl) countdownEl.textContent = this.facialAnalysis.countdown;
-                
                 if (this.facialAnalysis.countdown <= 0) {
                     clearInterval(this.recordingTimer);
                     this.completeFacialAnalysis();
@@ -599,13 +628,8 @@ new Vue({
             this.facialAnalysis.recording = false;
             this.facialAnalysis.completed = true;
             this.faceDetectionRunning = false;
-            if (!this.facialAnalysis.mood) {
-                this.facialAnalysis.mood = this.cameraMood || 'Neutral';
-                this.facialAnalysis.accuracy = this.cameraConfidence || 65;
-            }
             this.stopCameraStream();
             this.showCameraModal = false;
-            this.showToast(`Face detected: ${this.facialAnalysis.mood} (${this.facialAnalysis.accuracy}%)`, 'success');
             this.checkAllModalsCompleted();
         },
         
@@ -621,7 +645,8 @@ new Vue({
                     const moods = ['Happy', 'Sad', 'Energetic', 'Calm', 'Stressed'];
                     this.facialAnalysis.mood = moods[Math.floor(Math.random() * moods.length)];
                     this.facialAnalysis.accuracy = Math.floor(Math.random() * 20) + 75;
-                    this.showToast(`Face detected: ${this.facialAnalysis.mood} (${this.facialAnalysis.accuracy}%)`, 'success');
+                    this.facialAnalysis.valence = 0.5 + Math.random() * 0.4;
+                    this.facialAnalysis.energy = 0.3 + Math.random() * 0.6;
                     this.checkAllModalsCompleted();
                 }
             }, 1000);
@@ -664,10 +689,11 @@ new Vue({
                         const result = await analyzeVoiceEmotion(audioBlob);
                         this.voiceAnalysis.mood = result.mood;
                         this.voiceAnalysis.accuracy = result.confidence;
+                        this.voiceAnalysis.valence = result.valence;
+                        this.voiceAnalysis.energy = result.energy;
                         this.voiceAnalysis.recording = false;
                         this.voiceAnalysis.completed = true;
                         this.showVoiceModal = false;
-                        this.showToast(`Voice detected: ${result.mood} (${result.confidence}%)`, 'success');
                         this.checkAllModalsCompleted();
                         stream.getTracks().forEach(track => track.stop());
                     };
@@ -721,7 +747,8 @@ new Vue({
                 const moods = ['Happy', 'Sad', 'Energetic', 'Calm', 'Stressed'];
                 this.voiceAnalysis.mood = moods[Math.floor(Math.random() * moods.length)];
                 this.voiceAnalysis.accuracy = Math.floor(Math.random() * 20) + 70;
-                this.showToast(`Voice detected: ${this.voiceAnalysis.mood} (${this.voiceAnalysis.accuracy}%)`, 'success');
+                this.voiceAnalysis.valence = 0.5 + Math.random() * 0.4;
+                this.voiceAnalysis.energy = 0.3 + Math.random() * 0.6;
                 this.checkAllModalsCompleted();
             }, 5000);
         },
@@ -738,10 +765,7 @@ new Vue({
         // ==================== TEXT ANALYSIS ====================
         
         async analyzeText() {
-            if (!this.textAnalysis.input) {
-                this.showToast('Please enter some text', 'error');
-                return;
-            }
+            if (!this.textAnalysis.input) return;
             
             this.showToast('Analyzing your text...', 'success');
             const result = await analyzeTextSentiment(this.textAnalysis.input);
@@ -749,8 +773,9 @@ new Vue({
             this.textAnalysis.completed = true;
             this.textAnalysis.mood = result.mood;
             this.textAnalysis.accuracy = result.confidence;
+            this.textAnalysis.valence = result.valence;
+            this.textAnalysis.energy = result.energy;
             
-            this.showToast(`Text analysis: ${result.mood} (${result.confidence}%)`, 'success');
             this.checkAllModalsCompleted();
         },
         
@@ -765,10 +790,10 @@ new Vue({
         },
         
         fuseModalities() {
+            // Calculate weighted average for mood
             const moods = [this.facialAnalysis.mood, this.voiceAnalysis.mood, this.textAnalysis.mood];
             const accuracies = [this.facialAnalysis.accuracy, this.voiceAnalysis.accuracy, this.textAnalysis.accuracy];
             
-            // Weighted voting
             const weights = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
             moods.forEach((mood, index) => {
                 if (weights[mood] !== undefined) {
@@ -785,7 +810,28 @@ new Vue({
                 }
             }
             
-            // Calculate final confidence
+            // Calculate weighted valence and energy
+            let totalValence = 0;
+            let totalEnergy = 0;
+            let totalWeight = 0;
+            
+            const analyses = [
+                { valence: this.facialAnalysis.valence, energy: this.facialAnalysis.energy, weight: this.facialAnalysis.accuracy },
+                { valence: this.voiceAnalysis.valence, energy: this.voiceAnalysis.energy, weight: this.voiceAnalysis.accuracy },
+                { valence: this.textAnalysis.valence, energy: this.textAnalysis.energy, weight: this.textAnalysis.accuracy }
+            ];
+            
+            analyses.forEach(a => {
+                if (a.valence && a.energy && a.weight > 0) {
+                    totalValence += a.valence * a.weight;
+                    totalEnergy += a.energy * a.weight;
+                    totalWeight += a.weight;
+                }
+            });
+            
+            const finalValence = totalWeight > 0 ? totalValence / totalWeight : 0.5;
+            const finalEnergy = totalWeight > 0 ? totalEnergy / totalWeight : 0.5;
+            
             let totalAccuracy = 0;
             let count = 0;
             moods.forEach((mood, index) => {
@@ -797,20 +843,22 @@ new Vue({
             const confidence = count > 0 ? Math.round(totalAccuracy / count) : 70;
             
             const descriptions = {
-                Happy: '🎵 Your cheerful mood shines through! Enjoy these uplifting tracks.',
-                Sad: '🎵 We hear you. These soulful melodies might help you process your emotions.',
-                Energetic: '🎵 High energy detected! Powerful tracks to match your dynamic spirit.',
-                Calm: '🎵 Peaceful state detected. Soothing tracks to complement your tranquility.',
-                Stressed: '🎵 Feeling overwhelmed? Let these calming tracks help you find your center.'
+                Happy: 'Your cheerful mood shines through! Playing uplifting Spotify tracks.',
+                Sad: 'We hear you. Playing soulful Spotify tracks that may help.',
+                Energetic: 'High energy detected! Playing powerful Spotify tracks.',
+                Calm: 'Peaceful state detected. Playing soothing Spotify tracks.',
+                Stressed: 'Playing calming Spotify tracks to help you relax.'
             };
             
             this.fusedMood = { 
                 mood: fusedMood, 
                 confidence, 
-                description: descriptions[fusedMood] || '🎵 Here are personalized tracks for your mood.'
+                valence: finalValence,
+                energy: finalEnergy,
+                description: descriptions[fusedMood] || 'Playing personalized Spotify tracks for you.'
             };
             
-            this.showToast(`Final mood: ${fusedMood} (${confidence}% confidence)`, 'success');
+            this.showToast(`Final mood: ${fusedMood} (${confidence}%)`, 'success');
         },
         
         // ==================== SPOTIFY RECOMMENDATIONS ====================
@@ -825,6 +873,8 @@ new Vue({
                     body: JSON.stringify({ 
                         mood: this.fusedMood.mood,
                         confidence: this.fusedMood.confidence,
+                        valence: this.fusedMood.valence,
+                        energy: this.fusedMood.energy,
                         limit: 12
                     })
                 });
@@ -845,73 +895,73 @@ new Vue({
         },
         
         getCuratedTracks() {
-            // Curated tracks that work with preview URLs
             this.recommendedTracks = [
-                { id: '1', name: 'Happy Vibes', artist: 'MoodWave', previewUrl: 'https://actions.google.com/sound/zip/happy-birthday.mp3', color: '#FFD700' },
-                { id: '2', name: 'Calm Meditation', artist: 'MoodWave', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', color: '#96CEB4' },
-                { id: '3', name: 'Energy Boost', artist: 'MoodWave', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3', color: '#FF6B6B' }
+                { id: '1', name: 'Happy Vibes Selection', artist: 'Spotify', spotifyUri: 'spotify:track:4iV5W9uYEdYUVa79Axb7Rh', color: '#FFD700' },
+                { id: '2', name: 'Calm Meditation Mix', artist: 'Spotify', spotifyUri: 'spotify:track:3f9zJnRrCvJ6Wl2VDfZ8fG', color: '#96CEB4' },
+                { id: '3', name: 'Energy Boost Workout', artist: 'Spotify', spotifyUri: 'spotify:track:6rqhFgbbKwnb9MLmUQDhG6', color: '#FF6B6B' }
             ];
-            this.showToast('Curated tracks ready for you!', 'success');
+            this.showToast('Click play to listen on Spotify!', 'success');
         },
         
-        // ==================== AUDIO PLAYER ====================
+        // ==================== SPOTIFY PLAYBACK ====================
         
-        playTrack(track) {
-            this.stopCurrentTrack();
+        async playSpotifyTrack(track) {
+            if (!track.spotifyUri) {
+                this.showToast('No Spotify URI available', 'error');
+                return;
+            }
             
-            this.currentTrackName = track.name;
-            this.currentArtist = track.artist;
+            if (!this.spotifyToken) {
+                const token = localStorage.getItem('token');
+                if (token) {
+                    this.spotifyToken = token;
+                    await initSpotifyPlayer(token);
+                }
+            }
             
-            if (track.previewUrl) {
-                this.currentAudio = new Audio(track.previewUrl);
-                this.currentAudio.volume = this.audioVolume;
-                
-                this.currentAudio.play()
-                    .then(() => {
-                        this.currentPlayingTrackId = track.id;
-                        this.isPlaying = true;
-                        this.showToast(`Now playing: ${track.name}`, 'success');
-                    })
-                    .catch(error => {
-                        console.error('Playback error:', error);
-                        this.showToast('Cannot play preview', 'error');
-                    });
-                
-                this.currentAudio.onended = () => {
-                    this.isPlaying = false;
-                    this.currentPlayingTrackId = null;
-                };
+            this.showToast(`Playing ${track.name} on Spotify...`, 'success');
+            
+            const success = await playSpotifyTrack(track.spotifyUri, this.spotifyToken);
+            
+            if (success) {
+                this.currentTrackName = track.name;
+                this.currentArtist = track.artist;
+                this.currentPlayingTrackId = track.id;
+                this.isPlaying = true;
+                this.isSpotifyPlaying = true;
+                this.showToast(`Now playing: ${track.name}`, 'success');
             } else {
-                this.showToast('No preview available', 'error');
+                // Fallback: Open in new tab
+                if (track.externalUrl) {
+                    window.open(track.externalUrl, '_blank');
+                    this.showToast(`Opening ${track.name} on Spotify Web Player`, 'info');
+                } else {
+                    this.showToast('Could not play track. Please try another.', 'error');
+                }
             }
         },
         
         togglePlayPause(track) {
             if (this.currentPlayingTrackId === track.id && this.isPlaying) {
-                this.currentAudio.pause();
+                // Pause not supported in Web Playback SDK easily, just stop
                 this.isPlaying = false;
-            } 
-            else if (this.currentPlayingTrackId === track.id && !this.isPlaying) {
-                this.currentAudio.play();
-                this.isPlaying = true;
-            } 
-            else {
-                this.playTrack(track);
+                this.showToast('Paused', 'success');
+            } else {
+                this.playSpotifyTrack(track);
             }
         },
         
         stopCurrentTrack() {
-            if (this.currentAudio) {
-                this.currentAudio.pause();
-                this.currentAudio = null;
-            }
             this.isPlaying = false;
             this.currentPlayingTrackId = null;
+            this.isSpotifyPlaying = false;
         },
         
         setVolume(volumeValue) {
             this.audioVolume = volumeValue / 100;
-            if (this.currentAudio) this.currentAudio.volume = this.audioVolume;
+            if (spotifyPlayer) {
+                spotifyPlayer.setVolume(this.audioVolume);
+            }
             localStorage.setItem('audioVolume', this.audioVolume);
         },
         
@@ -935,6 +985,8 @@ new Vue({
                     body: JSON.stringify({
                         mood: this.fusedMood.mood,
                         confidence: this.fusedMood.confidence,
+                        valence: this.fusedMood.valence,
+                        energy: this.fusedMood.energy,
                         description: this.fusedMood.description
                     })
                 });
@@ -952,10 +1004,10 @@ new Vue({
             this.stopCurrentTrack();
             this.faceDetectionRunning = false;
             
-            this.facialAnalysis = { recording: false, completed: false, countdown: 10, mood: '', accuracy: 0 };
-            this.voiceAnalysis = { recording: false, completed: false, mood: '', accuracy: 0 };
-            this.textAnalysis = { input: '', completed: false, mood: '', accuracy: 0 };
-            this.fusedMood = { mood: '', confidence: 0, description: '' };
+            this.facialAnalysis = { recording: false, completed: false, countdown: 10, mood: '', accuracy: 0, valence: 0.5, energy: 0.5 };
+            this.voiceAnalysis = { recording: false, completed: false, mood: '', accuracy: 0, valence: 0.5, energy: 0.5 };
+            this.textAnalysis = { input: '', completed: false, mood: '', accuracy: 0, valence: 0.5, energy: 0.5 };
+            this.fusedMood = { mood: '', confidence: 0, valence: 0.5, energy: 0.5, description: '' };
             this.recommendedTracks = [];
             this.showCameraModal = false;
             this.showVoiceModal = false;
@@ -1000,9 +1052,12 @@ new Vue({
                 const userData = JSON.parse(user);
                 this.currentUser = userData.username;
                 this.userId = userData.id;
+                this.spotifyToken = token;
                 this.currentPage = 'home';
                 this.startSessionTimer();
                 this.fetchMoodHistory();
+                // Initialize Spotify player in background
+                initSpotifyPlayer(token);
             }
         }
     }
