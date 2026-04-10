@@ -465,14 +465,16 @@
                         <div class="camera-overlay" v-if="facialAnalysis.recording">
                             <div class="countdown">{{ facialAnalysis.countdown }}s</div>
                             <div class="detection-info">
-                                <p>Detected: <strong>{{ detectedExpression || 'Analyzing...' }}</strong></p>
-                                <p>Mood: <strong>{{ cameraMood || '---' }}</strong></p>
+                                <p>Detected Mood: <strong class="detected-mood">---</strong></p>
                                 <div class="confidence-bar">
-                                    <div class="confidence-fill" :style="{ width: cameraConfidence + '%' }"></div>
+                                    <div class="confidence-fill" style="width: 0%"></div>
                                 </div>
-                                <p>Confidence: {{ cameraConfidence }}%</p>
+                                <p>Confidence: <span class="confidence-text">0</span>%</p>
+                                <div class="countdown-display">
+                                    <span class="countdown-number">{{ facialAnalysis.countdown }}</span> seconds remaining
+                                </div>
                             </div>
-                        </div>
+                                                    </div>
                     </div>
                 </div>
             </div>
