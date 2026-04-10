@@ -1,13 +1,10 @@
-// ==================== FACE DETECTION: face-api.js (CDN MODELS) ====================
+// ==================== FACE DETECTION ====================
 
 let faceModelsLoaded = false;
 
 async function initFaceDetection() {
     try {
-        // Use GitHub CDN - no local files needed!
         const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
-        
-        console.log("Loading face models from CDN...");
         
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
         await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
@@ -238,14 +235,12 @@ new Vue({
         recordingInterval: null,
         
         modelsReady: false,
-        loadingMessage: 'Loading face detection model...',
         
         darkMode: false,
         showThemeDropdown: false,
         showLogoutModal: false,
         
-        recordingTimer: null,
-        detectionInterval: null
+        recordingTimer: null
     },
     
     computed: {
@@ -269,7 +264,6 @@ new Vue({
         this.loadThemePreference();
         this.checkAuth();
         
-        // Wait for face-api.js to load
         const waitForFaceApi = setInterval(() => {
             if (typeof faceapi !== 'undefined') {
                 clearInterval(waitForFaceApi);
@@ -293,13 +287,10 @@ new Vue({
     
     methods: {
         async initFaceModels() {
-            this.loadingMessage = 'Loading face detection models...';
             const success = await initFaceDetection();
             this.modelsReady = success;
             if (success) {
                 this.showToast('Face detection ready!', 'success');
-            } else {
-                this.showToast('Face detection failed. Using simulation.', 'error');
             }
         },
         
@@ -646,7 +637,7 @@ new Vue({
         checkAllModalsCompleted() {
             if (this.allModalsCompleted) {
                 this.fuseModalities();
-                this.fetchRecommendations();
+                this.fetchSpotifyRecommendations();
                 this.updateDashboard();
             }
         },
@@ -671,21 +662,21 @@ new Vue({
             const confidence = count > 0 ? Math.round(totalAccuracy / count) : 70;
             
             const descriptions = {
-                Happy: 'Your cheerful mood shines through! Enjoy these uplifting tracks.',
-                Sad: 'We hear you. These soulful melodies might help you process your emotions.',
-                Energetic: 'High energy detected! Powerful tracks to match your dynamic spirit.',
-                Calm: 'Peaceful state detected. Soothing tracks to complement your tranquility.',
-                Stressed: 'Feeling overwhelmed? Let these calming tracks help you find your center.'
+                Happy: 'Your cheerful mood shines through! Enjoy these uplifting Spotify tracks.',
+                Sad: 'We hear you. These soulful Spotify tracks might help you process your emotions.',
+                Energetic: 'High energy detected! Powerful Spotify tracks to match your dynamic spirit.',
+                Calm: 'Peaceful state detected. Soothing Spotify tracks to complement your tranquility.',
+                Stressed: 'Feeling overwhelmed? Let these calming Spotify tracks help you find your center.'
             };
             
-            this.fusedMood = { mood: fusedMood, confidence, description: descriptions[fusedMood] || 'Here are some tracks for you.' };
+            this.fusedMood = { mood: fusedMood, confidence, description: descriptions[fusedMood] || 'Here are Spotify tracks for you.' };
         },
         
-        // ==================== RECOMMENDATIONS ====================
+        // ==================== SPOTIFY RECOMMENDATIONS ====================
         
-        async fetchRecommendations() {
+        async fetchSpotifyRecommendations() {
             this.isLoading = true;
-            this.showToast(`Finding ${this.fusedMood.mood} music...`, 'success');
+            this.showToast(`Finding ${this.fusedMood.mood} music on Spotify...`, 'success');
             
             try {
                 const response = await window.apiRequest('/spotify/recommendations', {
@@ -693,40 +684,27 @@ new Vue({
                     body: JSON.stringify({ 
                         mood: this.fusedMood.mood,
                         confidence: this.fusedMood.confidence,
-                        limit: 8
+                        limit: 12
                     })
                 });
                 
                 if (response.success && response.tracks && response.tracks.length > 0) {
                     this.recommendedTracks = response.tracks;
-                    this.showToast(`Found ${response.tracks.length} tracks!`, 'success');
+                    this.showToast(`Found ${response.tracks.length} Spotify tracks!`, 'success');
                 } else {
-                    this.getLocalTracks();
+                    this.showToast('No Spotify tracks found. Try again.', 'error');
+                    this.recommendedTracks = [];
                 }
             } catch (error) {
-                console.error('Recommendation error:', error);
-                this.getLocalTracks();
+                console.error('Spotify error:', error);
+                this.showToast('Spotify temporarily unavailable. Try again.', 'error');
+                this.recommendedTracks = [];
             }
             
             this.isLoading = false;
         },
         
-        getLocalTracks() {
-            // Working audio URLs from SoundHelix (royalty-free, always available)
-            this.recommendedTracks = [
-                { id: '1', name: 'Happy Melody', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', color: '#FFD700' },
-                { id: '2', name: 'Calm Piano', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3', color: '#96CEB4' },
-                { id: '3', name: 'Energetic Rock', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3', color: '#FF6B6B' },
-                { id: '4', name: 'Relaxing Ambient', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3', color: '#4ECDC4' },
-                { id: '5', name: 'Upbeat Pop', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3', color: '#FFD700' },
-                { id: '6', name: 'Chill Lo-Fi', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3', color: '#96CEB4' },
-                { id: '7', name: 'Motivational', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3', color: '#FF6B6B' },
-                { id: '8', name: 'Peaceful', artist: 'SoundHelix', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3', color: '#45B7D1' }
-            ];
-            this.showToast('Using royalty-free music library', 'info');
-        },
-        
-        // ==================== AUDIO PLAYER ====================
+        // ==================== IN-APP AUDIO PLAYER ====================
         
         playTrack(track) {
             this.stopCurrentTrack();
@@ -747,13 +725,15 @@ new Vue({
                     })
                     .catch(error => {
                         console.error('Playback error:', error);
-                        this.showToast('Cannot play preview', 'error');
+                        this.showToast('Preview not available for this track', 'error');
                     });
                 
                 this.currentAudio.onended = () => {
                     this.isPlaying = false;
                     this.currentPlayingTrackId = null;
                 };
+            } else {
+                this.showToast('No preview available for this track', 'error');
             }
         },
         
