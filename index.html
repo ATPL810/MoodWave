@@ -445,6 +445,7 @@
         </div>
 
         <!-- Camera Modal for Facial Detection - ONLY SHOW WHEN LOGGED IN -->
+                <!-- Camera Modal for Facial Detection - ONLY SHOW WHEN LOGGED IN -->
         <div class="modal-overlay" v-if="showCameraModal && currentUser" @click="closeCameraModal">
             <div class="modal-content camera-modal" @click.stop>
                 <div class="modal-header">
@@ -459,11 +460,8 @@
                         <div class="camera-overlay" v-if="facialAnalysis.recording">
                             <div class="countdown">{{ facialAnalysis.countdown }}s</div>
                             <div class="detection-info">
-                                <p>Detected Mood: <strong class="detected-mood">{{ cameraMood || 'Analyzing...' }}</strong></p>
-                                <div class="confidence-bar">
-                                    <div class="confidence-fill" :style="{ width: cameraConfidence + '%' }"></div>
-                                </div>
-                                <p>Confidence: {{ cameraConfidence }}%</p>
+                                <p>Detected Mood:</p>
+                                <p><strong class="detected-mood" style="font-size: 32px; color: #FFD700;">{{ cameraMood || 'Analyzing...' }}</strong></p>
                             </div>
                         </div>
                     </div>
@@ -471,7 +469,7 @@
             </div>
         </div>
 
-        <!-- Voice Modal - ONLY SHOW WHEN LOGGED IN -->
+                <!-- Voice Modal - ONLY SHOW WHEN LOGGED IN -->
         <div class="modal-overlay" v-if="showVoiceModal && currentUser" @click="closeVoiceModal">
             <div class="modal-content voice-modal" @click.stop>
                 <div class="modal-header">
@@ -482,6 +480,7 @@
                 </div>
                 <div class="modal-body">
                     <div class="voice-container">
+                        <!-- Recording State -->
                         <div class="voice-animation" v-if="voiceAnalysis.recording">
                             <div class="mic-icon">
                                 <i class="fa-solid fa-microphone"></i>
@@ -489,14 +488,29 @@
                             <div class="voice-waves">
                                 <span></span><span></span><span></span><span></span><span></span>
                             </div>
-                            <p>Recording... Speak now ({{ recordingTime }}s)</p>
-                            <div class="detection-info">
-                                <p>Detected Mood: <strong>{{ voiceMood || 'Analyzing...' }}</strong></p>
-                                <div class="confidence-bar">
-                                    <div class="confidence-fill" :style="{ width: voiceConfidence + '%' }"></div>
-                                </div>
-                                <p>Confidence: {{ voiceConfidence }}%</p>
+                            <p style="font-size: 18px; margin: 15px 0;">🎤 Recording... Speak now</p>
+                            <p style="font-size: 24px; font-weight: 600; color: #667eea;">{{ recordingTime }}s</p>
+                        </div>
+                        
+                        <!-- Final Result State (after recording) -->
+                        <div class="final-result" v-else-if="voiceAnalysis.completed">
+                            <div class="mic-icon" style="color: #4CAF50;">
+                                <i class="fa-solid fa-circle-check"></i>
                             </div>
+                            <h3 style="margin: 20px 0 10px;">Analysis Complete!</h3>
+                            <div class="final-mood-display" :style="{ color: getMoodColor(voiceAnalysis.mood) }">
+                                {{ voiceAnalysis.mood }}
+                            </div>
+                            <p style="font-size: 16px; color: #666;">Confidence: {{ voiceAnalysis.accuracy }}%</p>
+                            <div class="confidence-bar" style="margin: 15px auto; max-width: 300px; background: #e0e0e0;">
+                                <div class="confidence-fill" :style="{ width: voiceAnalysis.accuracy + '%', background: '#4CAF50' }"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Detection info during recording -->
+                        <div class="detection-info" v-if="voiceAnalysis.recording && voiceMood">
+                            <p style="margin-top: 20px;">Current Detection:</p>
+                            <p style="font-size: 20px; font-weight: 600;">{{ voiceMood }}</p>
                         </div>
                     </div>
                 </div>

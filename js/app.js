@@ -229,11 +229,18 @@ async function analyzeTextSentiment(text) {
     const lowerText = text.toLowerCase();
     
     const keywords = {
-        Happy: ["happy", "great", "good", "wonderful", "amazing", "excited", "joy", "love", "fantastic"],
-        Sad: ["sad", "down", "blue", "depressed", "unhappy", "miserable", "lonely", "heartbroken"],
-        Energetic: ["energetic", "excited", "pumped", "thrilled", "dynamic", "active", "lively"],
-        Calm: ["calm", "relaxed", "peaceful", "serene", "tranquil", "chill", "quiet"],
-        Stressed: ["stressed", "anxious", "worried", "nervous", "overwhelmed", "tense", "frustrated"]
+        Happy: ["happy", "great", "good", "wonderful", "amazing", "excited", "joy", "love", "fantastic", "delighted", "cheerful", "glad", "ecstatic", "jubilant", "thrilled", "optimistic", "content", "blissful", "radiant", "gleeful"],
+        
+        Sad: ["sad", "down", "blue", "depressed", "unhappy", "miserable", "lonely", "heartbroken", "gloomy", "somber", "melancholy", "grief", "sorrowful", "tearful", "despairing", "mournful", "dejected", "hopeless", "hurt", "weepy"],
+        
+        Energetic: ["energetic", "excited", "pumped", "thrilled", "dynamic", "active", "lively", "enthusiastic", "vibrant", "bouncy", "vigorous", "zesty", "peppy", "spirited", "animated", "buzzing", "fired up", "hyper", "restless", "unstoppable"],
+        
+        Calm: ["calm", "relaxed", "peaceful", "serene", "tranquil", "chill", "quiet", "composed", "centered", "mellow", "placid", "still", "undisturbed", "soothed", "balanced", "restful", "easygoing", "collected", "unruffled", "harmonious"],
+        
+        Stressed: ["stressed", "anxious", "worried", "nervous", "overwhelmed", "tense", "frustrated", "pressured", "strained", "panicky", "rattled", "uneasy", "distressed", "frazzled", "harried", "bothered", "edgy", "restless", "swamped", "burdened"],
+        
+        Angry: ["angry", "mad", "furious", "irritated", "annoyed", "enraged", "hostile", "bitter", "resentful", "outraged", "livid", "fuming", "aggravated", "grumpy", "cranky", "explosive", "heated", "indignant", "provoked", "wrathful"]
+    
     };
     
     let scores = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
@@ -448,6 +455,19 @@ new Vue({
         navigateTo(page) { 
             this.currentPage = page; 
             if (page === 'music') this.resetAnalysis(); 
+        },
+
+        // Helper for mood colors
+        getMoodColor(mood) {
+            const colors = {
+                'Happy': '#FFD700',
+                'Sad': '#45B7D1',
+                'Energetic': '#FF6B6B',
+                'Calm': '#96CEB4',
+                'Stressed': '#4ECDC4',
+                'Neutral': '#667eea'
+            };
+            return colors[mood] || '#667eea';
         },
         
         clearForms() {

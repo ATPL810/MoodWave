@@ -1234,19 +1234,29 @@ body.dark-mode-auth .modal-button.cancel:hover {
 }
 
 
-/* Camera Modal Styles */
+/* ========== LARGER CAMERA MODAL ========== */
 .camera-modal {
-    max-width: 600px !important;
+    max-width: 720px !important;
+    width: 95% !important;
+}
+
+.camera-modal .modal-body {
+    padding: 20px !important;
 }
 
 .camera-preview {
-    width: 100%;
-    border-radius: 12px;
-    background: #000;
+    width: 100% !important;
+    min-height: 400px !important;
+    max-height: 500px !important;
+    border-radius: 16px !important;
+    object-fit: cover !important;
+    background: #1a1a1a !important;
 }
 
 .camera-container {
     position: relative;
+    border-radius: 16px;
+    overflow: hidden;
 }
 
 .camera-overlay {
@@ -1254,10 +1264,33 @@ body.dark-mode-auth .modal-button.cancel:hover {
     bottom: 0;
     left: 0;
     right: 0;
-    background: rgba(0,0,0,0.7);
-    color: white;
-    padding: 15px;
-    border-radius: 0 0 12px 12px;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent) !important;
+    padding: 30px 20px 20px !important;
+}
+
+.camera-overlay .countdown {
+    font-size: 64px !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5) !important;
+    margin-bottom: 15px !important;
+}
+
+.camera-overlay .detection-info p {
+    font-size: 18px !important;
+    margin: 5px 0 !important;
+}
+
+.camera-overlay .detected-mood {
+    font-size: 28px !important;
+    font-weight: 700 !important;
+    color: #FFD700 !important;
+}
+
+/* Hide confidence elements in camera modal */
+.camera-modal .confidence-bar,
+.camera-modal .confidence-text,
+.camera-modal p:has(.confidence-text) {
+    display: none !important;
 }
 
 .countdown {
@@ -1524,43 +1557,35 @@ body.dark-mode-auth .modal-button.cancel:hover {
     transition: width 0.3s ease;
 }
 
-/* Voice Modal Styles */
-.voice-modal {
-    max-width: 450px !important;
+/* Voice Modal - Show final result */
+.voice-modal .voice-container {
     text-align: center;
 }
 
-.mic-icon {
-    font-size: 64px;
+.voice-modal .final-result {
+    text-align: center;
+    padding: 20px;
+}
+
+.voice-modal .final-mood-display {
+    font-size: 36px;
+    font-weight: 700;
+    margin: 20px 0;
+}
+
+.voice-modal .mic-icon {
+    font-size: 80px;
     color: #667eea;
     margin-bottom: 20px;
 }
 
-.voice-waves {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 5px;
-    margin: 20px 0;
+.voice-modal .mic-icon i {
+    animation: pulse 1.5s ease-in-out infinite;
 }
 
-.voice-waves span {
-    width: 5px;
-    height: 30px;
-    background: #667eea;
-    border-radius: 3px;
-    animation: wave 1s ease-in-out infinite;
-}
-
-.voice-waves span:nth-child(1) { animation-delay: 0s; height: 20px; }
-.voice-waves span:nth-child(2) { animation-delay: 0.2s; height: 40px; }
-.voice-waves span:nth-child(3) { animation-delay: 0.4s; height: 60px; }
-.voice-waves span:nth-child(4) { animation-delay: 0.6s; height: 40px; }
-.voice-waves span:nth-child(5) { animation-delay: 0.8s; height: 20px; }
-
-@keyframes wave {
-    0%, 100% { transform: scaleY(1); }
-    50% { transform: scaleY(1.5); }
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
 }
 
 /* Volume Control */
