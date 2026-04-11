@@ -1,3 +1,42 @@
+// ==================== CRITICAL FIX: Prevent Early Media Access ====================
+// Override getUserMedia until user is logged in and explicitly enables it
+(function() {
+    const originalGetUserMedia = navigator.mediaDevices?.getUserMedia;
+    let mediaEnabled = false;
+    
+    if (navigator.mediaDevices) {
+        navigator.mediaDevices.getUserMedia = function(constraints) {
+            // Check if user is logged in
+            const token = localStorage.getItem('token');
+            
+            if (!token) {
+                console.warn('🚫 Camera/Mic access blocked - User not logged in');
+                return Promise.reject(new Error('Media access requires login'));
+            }
+            
+            if (!mediaEnabled) {
+                console.warn('🚫 Camera/Mic access blocked - Not explicitly enabled');
+                return Promise.reject(new Error('Media access not enabled'));
+            }
+            
+            console.log('✅ Camera/Mic access granted');
+            return originalGetUserMedia.call(navigator.mediaDevices, constraints);
+        };
+        
+        // Method to enable media
+        window.enableMediaAccess = function() {
+            mediaEnabled = true;
+            console.log('✅ Media access enabled');
+        };
+        
+        // Method to disable media
+        window.disableMediaAccess = function() {
+            mediaEnabled = false;
+            console.log('🔒 Media access disabled');
+        };
+    }
+})();
+
 // ==================== API CONFIGURATION ====================
 const API_BASE_URL = 'https://moodwave-backend-4.onrender.com';
 
@@ -51,7 +90,6 @@ let sessionTimer = null;
 
 async function initFaceDetection() {
     try {
-        // Correct model URL from official face-api.js repository
         const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
         
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
@@ -64,7 +102,6 @@ async function initFaceDetection() {
         return true;
     } catch (error) {
         console.error("Face detection error:", error);
-        // Try fallback CDN
         try {
             const FALLBACK_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model';
             await faceapi.nets.tinyFaceDetector.loadFromUri(FALLBACK_URL);
@@ -262,6 +299,7 @@ new Vue({
         currentTrackName: '',
         currentArtist: '',
         currentTrackId: null,
+        currentPlayingTrackId: null,
         currentTrackUri: null,
         audioVolume: 0.7,
         showVolumeSlider: false,
@@ -281,6 +319,7 @@ new Vue({
         isRecording: false,
         recordingTime: 0,
         recordingInterval: null,
+        voiceVisualizationInterval: null,
         
         modelsReady: false,
         isLoadingRecommendations: false,
@@ -326,7 +365,8 @@ new Vue({
     },
     
     async mounted() {
-        // CRITICAL: Ensure camera/mic are OFF on initial load
+        // DISABLE media access on startup
+        window.disableMediaAccess();
         this.cleanupAllMedia();
         
         this.loadThemePreference();
@@ -361,16 +401,11 @@ new Vue({
     },
     
     methods: {
-        switchToRegister() { this.currentPage = 'register'; this.clearForms(); },
-        switchToLogin() { this.currentPage = 'login'; this.clearForms(); },
-        navigateTo(page) { 
-            this.currentPage = page; 
-            if (page === 'music') this.resetAnalysis(); 
-        },
-
         // ==================== MEDIA CLEANUP ====================
-
+        
         cleanupAllMedia() {
+            window.disableMediaAccess();
+            
             // Stop camera
             if (this.cameraStream) {
                 this.cameraStream.getTracks().forEach(track => {
@@ -383,7 +418,9 @@ new Vue({
             // Stop microphone
             if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
                 this.mediaRecorder.stop();
-                this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                if (this.mediaRecorder.stream) {
+                    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                }
                 console.log('Microphone track stopped');
             }
             this.mediaRecorder = null;
@@ -393,11 +430,24 @@ new Vue({
             if (this.recordingInterval) clearInterval(this.recordingInterval);
             if (this.voiceVisualizationInterval) clearInterval(this.voiceVisualizationInterval);
             
+            // Clear video element source
+            const videoElement = document.getElementById('camera-preview');
+            if (videoElement) {
+                videoElement.srcObject = null;
+            }
+            
             // Reset flags
             this.faceDetectionRunning = false;
             this.isRecording = false;
             this.showCameraModal = false;
             this.showVoiceModal = false;
+        },
+        
+        switchToRegister() { this.currentPage = 'register'; this.clearForms(); },
+        switchToLogin() { this.currentPage = 'login'; this.clearForms(); },
+        navigateTo(page) { 
+            this.currentPage = page; 
+            if (page === 'music') this.resetAnalysis(); 
         },
         
         clearForms() {
@@ -556,6 +606,9 @@ new Vue({
         // ==================== FACE DETECTION ====================
         
         startFacialAnalysis() {
+            // Enable media access first
+            window.enableMediaAccess();
+            
             this.showCameraModal = true;
             this.facialAnalysis.recording = true;
             this.facialAnalysis.countdown = 10;
@@ -636,6 +689,7 @@ new Vue({
             this.faceDetectionRunning = false;
             this.stopCameraStream();
             this.showCameraModal = false;
+            window.disableMediaAccess();
             this.showToast(`Face detected: ${this.facialAnalysis.mood} (${this.facialAnalysis.accuracy}%)`, 'success');
             this.checkAllModalsCompleted();
         },
@@ -667,7 +721,6 @@ new Vue({
                 this.cameraStream = null;
             }
             
-            // Also clear the video element source
             const videoElement = document.getElementById('camera-preview');
             if (videoElement) {
                 videoElement.srcObject = null;
@@ -675,6 +728,7 @@ new Vue({
         },
         
         closeCameraModal() {
+            window.disableMediaAccess();
             this.stopCameraStream();
             this.showCameraModal = false;
             this.facialAnalysis.recording = false;
@@ -688,6 +742,9 @@ new Vue({
         // ==================== VOICE ANALYSIS ====================
         
         startVoiceAnalysis() {
+            // Enable media access first
+            window.enableMediaAccess();
+            
             this.showVoiceModal = true;
             this.voiceAnalysis.recording = true;
             this.isRecording = true;
@@ -705,11 +762,14 @@ new Vue({
                     this.mediaRecorder.onstop = async () => {
                         const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
                         const result = await analyzeVoiceEmotion(audioBlob);
+                        this.voiceMood = result.mood;
+                        this.voiceConfidence = result.confidence;
                         this.voiceAnalysis.mood = result.mood;
                         this.voiceAnalysis.accuracy = result.confidence;
                         this.voiceAnalysis.recording = false;
                         this.voiceAnalysis.completed = true;
                         this.showVoiceModal = false;
+                        window.disableMediaAccess();
                         this.showToast(`Voice detected: ${result.mood} (${result.confidence}%)`, 'success');
                         this.checkAllModalsCompleted();
                         stream.getTracks().forEach(track => track.stop());
@@ -764,13 +824,21 @@ new Vue({
                 const moods = ['Happy', 'Sad', 'Energetic', 'Calm', 'Stressed'];
                 this.voiceAnalysis.mood = moods[Math.floor(Math.random() * moods.length)];
                 this.voiceAnalysis.accuracy = Math.floor(Math.random() * 20) + 70;
+                this.voiceMood = this.voiceAnalysis.mood;
+                this.voiceConfidence = this.voiceAnalysis.accuracy;
                 this.showToast(`Voice simulation: ${this.voiceAnalysis.mood}`, 'success');
                 this.checkAllModalsCompleted();
             }, 5000);
         },
         
         closeVoiceModal() {
-            if (this.mediaRecorder && this.mediaRecorder.state === 'recording') this.mediaRecorder.stop();
+            window.disableMediaAccess();
+            if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                this.mediaRecorder.stop();
+            }
+            if (this.mediaRecorder && this.mediaRecorder.stream) {
+                this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
             this.isRecording = false;
             this.voiceAnalysis.recording = false;
             this.showVoiceModal = false;
@@ -874,7 +942,6 @@ new Vue({
                     this.recommendedTracks = response.tracks;
                     this.showToast(`Found ${response.tracks.length} Spotify tracks!`, 'success');
                 } else {
-                    // Use fallback mock data if Spotify fails
                     this.recommendedTracks = this.getMockTracks(this.fusedMood.mood);
                     this.showToast('Using demo tracks - connect Spotify for real music', 'error');
                 }
@@ -890,24 +957,22 @@ new Vue({
         getMockTracks(mood) {
             const mockData = {
                 Happy: [
-                    { id: '1', name: 'Happy', artist: 'Pharrell Williams', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/60nZcImufyMA1MKQY3dcCH', color: '#FFD700' },
-                    { id: '2', name: 'Good Vibrations', artist: 'The Beach Boys', albumArt: 'https://i.scdn.co/image/ab67616d0000b273e1b2e82f2fcf9d3c5f5b5f5b', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#FFD700' }
+                    { id: '1', name: 'Happy', artist: 'Pharrell Williams', albumArt: '', externalUrl: 'https://open.spotify.com/track/60nZcImufyMA1MKQY3dcCH', color: '#FFD700' },
+                    { id: '2', name: 'Good Vibrations', artist: 'The Beach Boys', albumArt: '', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#FFD700' }
                 ],
                 Sad: [
-                    { id: '3', name: 'Someone Like You', artist: 'Adele', albumArt: 'https://i.scdn.co/image/ab67616d0000b2737fcead687e4a3c5f5b5f5b', externalUrl: 'https://open.spotify.com/track/3bNv3VuUOKgrf5hu3YcuRo', color: '#45B7D1' },
-                    { id: '4', name: 'Fix You', artist: 'Coldplay', albumArt: 'https://i.scdn.co/image/ab67616d0000b273de3f5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/7LVHVU3tWfcxj5aiPFEW4Q', color: '#45B7D1' }
+                    { id: '3', name: 'Someone Like You', artist: 'Adele', albumArt: '', externalUrl: 'https://open.spotify.com/track/3bNv3VuUOKgrf5hu3YcuRo', color: '#45B7D1' },
+                    { id: '4', name: 'Fix You', artist: 'Coldplay', albumArt: '', externalUrl: 'https://open.spotify.com/track/7LVHVU3tWfcxj5aiPFEW4Q', color: '#45B7D1' }
                 ],
                 Energetic: [
-                    { id: '5', name: 'Eye of the Tiger', artist: 'Survivor', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/2KH16WveTQWT6KOG9Rg6e2', color: '#FF6B6B' },
-                    { id: '6', name: 'Stronger', artist: 'Kanye West', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/6F2QnPXF4m5cSqyqQk9cZf', color: '#FF6B6B' }
+                    { id: '5', name: 'Eye of the Tiger', artist: 'Survivor', albumArt: '', externalUrl: 'https://open.spotify.com/track/2KH16WveTQWT6KOG9Rg6e2', color: '#FF6B6B' },
+                    { id: '6', name: 'Stronger', artist: 'Kanye West', albumArt: '', externalUrl: 'https://open.spotify.com/track/6F2QnPXF4m5cSqyqQk9cZf', color: '#FF6B6B' }
                 ],
                 Calm: [
-                    { id: '7', name: 'Weightless', artist: 'Marconi Union', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/6kkbVk5l4s5Q4q4q4q4q4q', color: '#96CEB4' },
-                    { id: '8', name: 'Clair de Lune', artist: 'Claude Debussy', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#96CEB4' }
+                    { id: '7', name: 'Weightless', artist: 'Marconi Union', albumArt: '', externalUrl: 'https://open.spotify.com/track/6kkbVk5l4s5Q4q4q4q4q4q', color: '#96CEB4' }
                 ],
                 Stressed: [
-                    { id: '9', name: 'Breathe', artist: 'Pink Floyd', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#4ECDC4' },
-                    { id: '10', name: 'Three Little Birds', artist: 'Bob Marley', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/3bNv3VuUOKgrf5hu3YcuRo', color: '#4ECDC4' }
+                    { id: '8', name: 'Breathe', artist: 'Pink Floyd', albumArt: '', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#4ECDC4' }
                 ]
             };
             return mockData[mood] || mockData.Happy;
@@ -926,6 +991,7 @@ new Vue({
             this.currentTrackName = track.name;
             this.currentArtist = track.artist;
             this.currentTrackId = track.id;
+            this.currentPlayingTrackId = track.id;
             this.isPlaying = true;
             
             this.showToast(`Opening ${track.name} on Spotify`, 'success');
@@ -933,6 +999,13 @@ new Vue({
         
         togglePlayPause(track) {
             this.playSpotifyTrack(track);
+        },
+        
+        stopCurrentTrack() {
+            this.isPlaying = false;
+            this.currentPlayingTrackId = null;
+            this.currentTrackName = '';
+            this.currentArtist = '';
         },
         
         setVolume(volumeValue) {
@@ -971,7 +1044,6 @@ new Vue({
         // ==================== RESET ====================
         
         resetAnalysis() {
-            // Use the comprehensive cleanup
             this.cleanupAllMedia();
             
             this.facialAnalysis = { recording: false, completed: false, countdown: 10, mood: '', accuracy: 0 };
@@ -981,6 +1053,7 @@ new Vue({
             this.recommendedTracks = [];
             this.isPlaying = false;
             this.currentTrackId = null;
+            this.currentPlayingTrackId = null;
         },
         
         // ==================== THEME ====================
