@@ -1,3 +1,49 @@
+// ==================== API CONFIGURATION ====================
+const API_BASE_URL = 'https://moodwave-backend-4.onrender.com';
+
+// Global API request function
+window.apiRequest = async (endpoint, options = {}) => {
+    const token = localStorage.getItem('token');
+    
+    const defaultOptions = {
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        credentials: 'include'
+    };
+    
+    const finalOptions = { ...defaultOptions, ...options };
+    
+    if (options.body && typeof options.body === 'string') {
+        // Body is already stringified
+    } else if (options.body) {
+        finalOptions.body = JSON.stringify(options.body);
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api${endpoint}`, finalOptions);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Request failed');
+        }
+        
+        return data;
+    } catch (error) {
+        console.error('API Error:', error);
+        throw error;
+    }
+};
+
+window.setAuthToken = (token) => {
+    localStorage.setItem('token', token);
+};
+
+window.clearAuthToken = () => {
+    localStorage.removeItem('token');
+};
+
 // ==================== FACE DETECTION ====================
 
 let faceModelsLoaded = false;
@@ -5,17 +51,31 @@ let sessionTimer = null;
 
 async function initFaceDetection() {
     try {
-        const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
+        // Correct model URL from official face-api.js repository
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
         
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
         await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
         
         faceModelsLoaded = true;
         console.log("✅ Face detection models loaded");
         return true;
     } catch (error) {
         console.error("Face detection error:", error);
-        return false;
+        // Try fallback CDN
+        try {
+            const FALLBACK_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model';
+            await faceapi.nets.tinyFaceDetector.loadFromUri(FALLBACK_URL);
+            await faceapi.nets.faceExpressionNet.loadFromUri(FALLBACK_URL);
+            faceModelsLoaded = true;
+            console.log("✅ Face models loaded from fallback");
+            return true;
+        } catch (fallbackError) {
+            console.error("Fallback also failed:", fallbackError);
+            return false;
+        }
     }
 }
 
@@ -49,6 +109,7 @@ async function analyzeFacialExpression(videoElement) {
                 case 'angry': mood = "Stressed"; confidence += 15; break;
                 case 'fearful': mood = "Stressed"; confidence += 10; break;
                 case 'surprised': mood = "Energetic"; confidence += 10; break;
+                case 'disgusted': mood = "Stressed"; confidence += 5; break;
                 case 'neutral': mood = "Neutral"; break;
             }
             
@@ -229,7 +290,10 @@ new Vue({
         showLogoutModal: false,
         
         recordingTimer: null,
-        faceDetectionRunning: false
+        faceDetectionRunning: false,
+        
+        // Spotify connection status
+        spotifyConnected: false
     },
     
     computed: {
@@ -252,6 +316,7 @@ new Vue({
     async mounted() {
         this.loadThemePreference();
         this.checkAuth();
+        this.checkSpotifyConnection();
         
         const waitForFaceApi = setInterval(async () => {
             if (typeof faceapi !== 'undefined') {
@@ -259,6 +324,8 @@ new Vue({
                 this.modelsReady = await initFaceDetection();
                 if (this.modelsReady) {
                     this.showToast('Face detection ready!', 'success');
+                } else {
+                    this.showToast('Face detection unavailable - using simulation', 'error');
                 }
             }
         }, 500);
@@ -308,7 +375,7 @@ new Vue({
                     this.startSessionTimer();
                     await this.fetchMoodHistory();
                     this.currentPage = 'loading';
-                    setTimeout(() => { this.currentPage = 'home'; this.isLoading = false; }, 5000);
+                    setTimeout(() => { this.currentPage = 'home'; this.isLoading = false; }, 3000);
                 }
             } catch (error) {
                 this.showToast(error.message, 'error');
@@ -345,7 +412,7 @@ new Vue({
                     })
                 });
                 if (data.success) {
-                    this.showToast('Registration successful!', 'success');
+                    this.showToast('Registration successful! Please login.', 'success');
                     setTimeout(() => { this.clearForms(); this.currentPage = 'login'; this.isLoading = false; }, 2000);
                 }
             } catch (error) {
@@ -402,6 +469,28 @@ new Vue({
             setTimeout(() => { this.toast.show = false; }, 3000);
         },
         
+        // ==================== SPOTIFY CONNECTION ====================
+        
+        async checkSpotifyConnection() {
+            try {
+                const data = await window.apiRequest('/spotify/status');
+                this.spotifyConnected = data.connected;
+            } catch (error) {
+                console.error('Spotify status check failed:', error);
+            }
+        },
+        
+        async connectSpotify() {
+            try {
+                const data = await window.apiRequest('/spotify/login');
+                if (data.authUrl) {
+                    window.location.href = data.authUrl;
+                }
+            } catch (error) {
+                this.showToast('Failed to connect Spotify', 'error');
+            }
+        },
+        
         // ==================== FACE DETECTION ====================
         
         startFacialAnalysis() {
@@ -410,20 +499,28 @@ new Vue({
             this.facialAnalysis.countdown = 10;
             this.faceDetectionRunning = true;
             
+            if (!this.modelsReady) {
+                this.showToast('Face detection not ready - using simulation', 'error');
+                this.startFacialAnalysisSimulation();
+                return;
+            }
+            
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
                     this.cameraStream = stream;
-                    const videoElement = document.getElementById('camera-preview');
-                    if (videoElement) {
-                        videoElement.srcObject = stream;
-                        videoElement.play();
-                    }
-                    this.startRealTimeFaceDetection();
+                    this.$nextTick(() => {
+                        const videoElement = document.getElementById('camera-preview');
+                        if (videoElement) {
+                            videoElement.srcObject = stream;
+                            videoElement.play();
+                            this.startRealTimeFaceDetection();
+                        }
+                    });
                     this.startCountdown();
                 })
                 .catch(error => {
                     console.error('Camera error:', error);
-                    this.showToast('Could not access camera.', 'error');
+                    this.showToast('Could not access camera. Using simulation.', 'error');
                     this.closeCameraModal();
                     this.startFacialAnalysisSimulation();
                 });
@@ -450,7 +547,9 @@ new Vue({
                 if (confidenceFill) confidenceFill.style.width = result.confidence + '%';
                 if (confidenceText) confidenceText.textContent = result.confidence + '%';
                 
-                requestAnimationFrame(detect);
+                if (this.facialAnalysis.recording) {
+                    requestAnimationFrame(detect);
+                }
             };
             
             detect();
@@ -491,6 +590,7 @@ new Vue({
                     const moods = ['Happy', 'Sad', 'Energetic', 'Calm', 'Stressed'];
                     this.facialAnalysis.mood = moods[Math.floor(Math.random() * moods.length)];
                     this.facialAnalysis.accuracy = Math.floor(Math.random() * 20) + 75;
+                    this.showToast(`Face simulation: ${this.facialAnalysis.mood}`, 'success');
                     this.checkAllModalsCompleted();
                 }
             }, 1000);
@@ -555,7 +655,7 @@ new Vue({
                 })
                 .catch(error => {
                     console.error('Microphone error:', error);
-                    this.showToast('Could not access microphone.', 'error');
+                    this.showToast('Could not access microphone. Using simulation.', 'error');
                     this.closeVoiceModal();
                     this.startVoiceAnalysisSimulation();
                 });
@@ -590,6 +690,7 @@ new Vue({
                 const moods = ['Happy', 'Sad', 'Energetic', 'Calm', 'Stressed'];
                 this.voiceAnalysis.mood = moods[Math.floor(Math.random() * moods.length)];
                 this.voiceAnalysis.accuracy = Math.floor(Math.random() * 20) + 70;
+                this.showToast(`Voice simulation: ${this.voiceAnalysis.mood}`, 'success');
                 this.checkAllModalsCompleted();
             }, 5000);
         },
@@ -606,7 +707,10 @@ new Vue({
         // ==================== TEXT ANALYSIS ====================
         
         async analyzeText() {
-            if (!this.textAnalysis.input) return;
+            if (!this.textAnalysis.input) {
+                this.showToast('Please enter some text', 'error');
+                return;
+            }
             
             this.showToast('Analyzing your text...', 'success');
             const result = await analyzeTextSentiment(this.textAnalysis.input);
@@ -635,7 +739,7 @@ new Vue({
             
             const weights = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
             moods.forEach((mood, index) => {
-                if (weights[mood] !== undefined) {
+                if (mood && weights[mood] !== undefined) {
                     weights[mood] += accuracies[index];
                 }
             });
@@ -694,18 +798,45 @@ new Vue({
                 
                 if (response.success && response.tracks && response.tracks.length > 0) {
                     this.recommendedTracks = response.tracks;
-                    this.showToast(`Found ${response.tracks.length} Spotify tracks! Click play to listen.`, 'success');
+                    this.showToast(`Found ${response.tracks.length} Spotify tracks!`, 'success');
                 } else {
-                    this.showToast('No Spotify tracks found. Please try again.', 'error');
-                    this.recommendedTracks = [];
+                    // Use fallback mock data if Spotify fails
+                    this.recommendedTracks = this.getMockTracks(this.fusedMood.mood);
+                    this.showToast('Using demo tracks - connect Spotify for real music', 'error');
                 }
             } catch (error) {
                 console.error('Spotify error:', error);
-                this.showToast('Spotify temporarily unavailable. Try again.', 'error');
-                this.recommendedTracks = [];
+                this.recommendedTracks = this.getMockTracks(this.fusedMood.mood);
+                this.showToast('Using demo tracks - Spotify unavailable', 'error');
             }
             
             this.isLoadingRecommendations = false;
+        },
+        
+        getMockTracks(mood) {
+            const mockData = {
+                Happy: [
+                    { id: '1', name: 'Happy', artist: 'Pharrell Williams', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/60nZcImufyMA1MKQY3dcCH', color: '#FFD700' },
+                    { id: '2', name: 'Good Vibrations', artist: 'The Beach Boys', albumArt: 'https://i.scdn.co/image/ab67616d0000b273e1b2e82f2fcf9d3c5f5b5f5b', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#FFD700' }
+                ],
+                Sad: [
+                    { id: '3', name: 'Someone Like You', artist: 'Adele', albumArt: 'https://i.scdn.co/image/ab67616d0000b2737fcead687e4a3c5f5b5f5b', externalUrl: 'https://open.spotify.com/track/3bNv3VuUOKgrf5hu3YcuRo', color: '#45B7D1' },
+                    { id: '4', name: 'Fix You', artist: 'Coldplay', albumArt: 'https://i.scdn.co/image/ab67616d0000b273de3f5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/7LVHVU3tWfcxj5aiPFEW4Q', color: '#45B7D1' }
+                ],
+                Energetic: [
+                    { id: '5', name: 'Eye of the Tiger', artist: 'Survivor', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/2KH16WveTQWT6KOG9Rg6e2', color: '#FF6B6B' },
+                    { id: '6', name: 'Stronger', artist: 'Kanye West', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/6F2QnPXF4m5cSqyqQk9cZf', color: '#FF6B6B' }
+                ],
+                Calm: [
+                    { id: '7', name: 'Weightless', artist: 'Marconi Union', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/6kkbVk5l4s5Q4q4q4q4q4q', color: '#96CEB4' },
+                    { id: '8', name: 'Clair de Lune', artist: 'Claude Debussy', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#96CEB4' }
+                ],
+                Stressed: [
+                    { id: '9', name: 'Breathe', artist: 'Pink Floyd', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#4ECDC4' },
+                    { id: '10', name: 'Three Little Birds', artist: 'Bob Marley', albumArt: 'https://i.scdn.co/image/ab67616d0000b2735f16ef3d5e9d836e7cece49e', externalUrl: 'https://open.spotify.com/track/3bNv3VuUOKgrf5hu3YcuRo', color: '#4ECDC4' }
+                ]
+            };
+            return mockData[mood] || mockData.Happy;
         },
         
         // ==================== SPOTIFY PLAYBACK ====================
@@ -716,7 +847,6 @@ new Vue({
                 return;
             }
             
-            // Open Spotify Web Player in a new tab
             window.open(track.externalUrl, '_blank');
             
             this.currentTrackName = track.name;
@@ -724,7 +854,7 @@ new Vue({
             this.currentTrackId = track.id;
             this.isPlaying = true;
             
-            this.showToast(`Opening ${track.name} on Spotify Web Player`, 'success');
+            this.showToast(`Opening ${track.name} on Spotify`, 'success');
         },
         
         togglePlayPause(track) {
@@ -759,7 +889,9 @@ new Vue({
                         description: this.fusedMood.description
                     })
                 });
-            } catch (error) { console.error('Failed to save mood:', error); }
+            } catch (error) { 
+                console.error('Failed to save mood:', error); 
+            }
         },
         
         // ==================== RESET ====================
@@ -819,12 +951,17 @@ new Vue({
             const token = localStorage.getItem('token');
             const user = localStorage.getItem('user');
             if (token && user) {
-                const userData = JSON.parse(user);
-                this.currentUser = userData.username;
-                this.userId = userData.id;
-                this.currentPage = 'home';
-                this.startSessionTimer();
-                this.fetchMoodHistory();
+                try {
+                    const userData = JSON.parse(user);
+                    this.currentUser = userData.username;
+                    this.userId = userData.id;
+                    this.currentPage = 'home';
+                    this.startSessionTimer();
+                    this.fetchMoodHistory();
+                } catch (e) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                }
             }
         }
     }
