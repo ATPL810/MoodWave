@@ -543,6 +543,22 @@
 
     <!-- Spotify Web Playback SDK -->
     <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    
+    <script>
+    // Global cleanup for any lingering media
+        window.addEventListener('beforeunload', function() {
+            if (window.__vue__) {
+                window.__vue__.cleanupAllMedia();
+            }
+        });
+        
+        // Stop any media when page becomes hidden
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden && window.__vue__) {
+                window.__vue__.cleanupAllMedia();
+            }
+        });
+    </script>
 
 </body>
 </html>

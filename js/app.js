@@ -307,35 +307,56 @@ new Vue({
     watch: {
         currentPage: {
             immediate: true,
-            handler(newPage) {
-                this.$nextTick(() => { this.applyTheme(); });
+            handler(newPage, oldPage) {
+                this.$nextTick(() => { 
+                    this.applyTheme(); 
+                });
+                
+                // Clean up media when leaving home/music pages
+                if (oldPage === 'home' || oldPage === 'music') {
+                    this.cleanupAllMedia();
+                }
+                
+                // Stop camera if navigating to login/register
+                if (newPage === 'login' || newPage === 'register') {
+                    this.cleanupAllMedia();
+                }
             }
         }
     },
     
     async mounted() {
+        // CRITICAL: Ensure camera/mic are OFF on initial load
+        this.cleanupAllMedia();
+        
         this.loadThemePreference();
         this.checkAuth();
         this.checkSpotifyConnection();
         
-        const waitForFaceApi = setInterval(async () => {
-            if (typeof faceapi !== 'undefined') {
-                clearInterval(waitForFaceApi);
-                this.modelsReady = await initFaceDetection();
-                if (this.modelsReady) {
-                    this.showToast('Face detection ready!', 'success');
-                } else {
-                    this.showToast('Face detection unavailable - using simulation', 'error');
+        // Only initialize face detection if user is logged in
+        if (this.currentUser) {
+            const waitForFaceApi = setInterval(async () => {
+                if (typeof faceapi !== 'undefined') {
+                    clearInterval(waitForFaceApi);
+                    this.modelsReady = await initFaceDetection();
+                    if (this.modelsReady) {
+                        console.log('Face detection ready');
+                    }
                 }
-            }
-        }, 500);
-        
-        setTimeout(() => clearInterval(waitForFaceApi), 15000);
+            }, 500);
+            
+            setTimeout(() => clearInterval(waitForFaceApi), 15000);
+        }
         
         document.addEventListener('click', (e) => {
             if (this.showThemeDropdown && !e.target.closest('.theme-dropdown')) {
                 this.showThemeDropdown = false;
             }
+        });
+        
+        // Clean up media when page unloads
+        window.addEventListener('beforeunload', () => {
+            this.cleanupAllMedia();
         });
     },
     
@@ -345,6 +366,38 @@ new Vue({
         navigateTo(page) { 
             this.currentPage = page; 
             if (page === 'music') this.resetAnalysis(); 
+        },
+
+        // ==================== MEDIA CLEANUP ====================
+
+        cleanupAllMedia() {
+            // Stop camera
+            if (this.cameraStream) {
+                this.cameraStream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('Camera track stopped');
+                });
+                this.cameraStream = null;
+            }
+            
+            // Stop microphone
+            if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                this.mediaRecorder.stop();
+                this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                console.log('Microphone track stopped');
+            }
+            this.mediaRecorder = null;
+            
+            // Clear all timers
+            if (this.recordingTimer) clearInterval(this.recordingTimer);
+            if (this.recordingInterval) clearInterval(this.recordingInterval);
+            if (this.voiceVisualizationInterval) clearInterval(this.voiceVisualizationInterval);
+            
+            // Reset flags
+            this.faceDetectionRunning = false;
+            this.isRecording = false;
+            this.showCameraModal = false;
+            this.showVoiceModal = false;
         },
         
         clearForms() {
@@ -451,9 +504,18 @@ new Vue({
         
         async logout() {
             this.showLogoutModal = false;
-            try { await window.apiRequest('/auth/logout', { method: 'POST' }); } catch(e) {}
+            
+            // CRITICAL: Stop all media before logging out
+            this.cleanupAllMedia();
+            
+            try { 
+                await window.apiRequest('/auth/logout', { method: 'POST' }); 
+            } catch(e) {
+                console.log('Logout API call failed:', e);
+            }
+            
             if (sessionTimer) clearInterval(sessionTimer);
-            if (this.cameraStream) this.stopCameraStream();
+            
             window.clearAuthToken();
             localStorage.removeItem('user');
             this.currentUser = '';
@@ -598,8 +660,17 @@ new Vue({
         
         stopCameraStream() {
             if (this.cameraStream) {
-                this.cameraStream.getTracks().forEach(track => track.stop());
+                this.cameraStream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('Camera track stopped');
+                });
                 this.cameraStream = null;
+            }
+            
+            // Also clear the video element source
+            const videoElement = document.getElementById('camera-preview');
+            if (videoElement) {
+                videoElement.srcObject = null;
             }
         },
         
@@ -608,7 +679,10 @@ new Vue({
             this.showCameraModal = false;
             this.facialAnalysis.recording = false;
             this.faceDetectionRunning = false;
-            if (this.recordingTimer) clearInterval(this.recordingTimer);
+            if (this.recordingTimer) {
+                clearInterval(this.recordingTimer);
+                this.recordingTimer = null;
+            }
         },
         
         // ==================== VOICE ANALYSIS ====================
@@ -897,21 +971,14 @@ new Vue({
         // ==================== RESET ====================
         
         resetAnalysis() {
-            this.stopCameraStream();
-            if (this.mediaRecorder && this.mediaRecorder.state === 'recording') this.mediaRecorder.stop();
-            if (this.recordingInterval) clearInterval(this.recordingInterval);
-            if (this.recordingTimer) clearInterval(this.recordingTimer);
-            if (this.voiceVisualizationInterval) clearInterval(this.voiceVisualizationInterval);
-            this.faceDetectionRunning = false;
+            // Use the comprehensive cleanup
+            this.cleanupAllMedia();
             
             this.facialAnalysis = { recording: false, completed: false, countdown: 10, mood: '', accuracy: 0 };
             this.voiceAnalysis = { recording: false, completed: false, mood: '', accuracy: 0 };
             this.textAnalysis = { input: '', completed: false, mood: '', accuracy: 0 };
             this.fusedMood = { mood: '', confidence: 0, description: '' };
             this.recommendedTracks = [];
-            this.showCameraModal = false;
-            this.showVoiceModal = false;
-            this.isRecording = false;
             this.isPlaying = false;
             this.currentTrackId = null;
         },
@@ -950,6 +1017,10 @@ new Vue({
         checkAuth() {
             const token = localStorage.getItem('token');
             const user = localStorage.getItem('user');
+            
+            // First, ensure all media is stopped
+            this.cleanupAllMedia();
+            
             if (token && user) {
                 try {
                     const userData = JSON.parse(user);
@@ -959,9 +1030,13 @@ new Vue({
                     this.startSessionTimer();
                     this.fetchMoodHistory();
                 } catch (e) {
+                    console.error('Auth check failed:', e);
                     localStorage.removeItem('token');
                     localStorage.removeItem('user');
+                    this.currentPage = 'login';
                 }
+            } else {
+                this.currentPage = 'login';
             }
         }
     }
