@@ -933,13 +933,13 @@ new Vue({
         async fetchMoodHistory() {
             try {
                 const data = await window.apiRequest('/mood/history');
-                if (data.success) {
+                if (data.success && data.history) {
                     this.moodHistory = data.history.map(entry => {
-                        // Parse the stored timestamp
-                        const utcTime = new Date(entry.createdAt || entry.timestamp || new Date());
+                        // Use the ACTUAL stored timestamp from database
+                        const storedTime = new Date(entry.createdAt || entry.time);
                         
                         // Add 4 hours for Mauritius time
-                        const mauritiusTime = new Date(utcTime.getTime() + (4 * 60 * 60 * 1000));
+                        const mauritiusTime = new Date(storedTime.getTime() + (4 * 60 * 60 * 1000));
                         
                         // Format: "12 Apr, 14:30"
                         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1593,9 +1593,10 @@ new Vue({
         // ==================== DASHBOARD ====================
         
         async updateDashboard() {
+            // Create timestamp for this specific moment
             const now = new Date();
             
-            // Add 4 hours for Mauritius time (GMT+4)
+            // Add 4 hours for Mauritius time
             const mauritiusTime = new Date(now.getTime() + (4 * 60 * 60 * 1000));
             
             // Format: "12 Apr, 14:30"
@@ -1607,6 +1608,7 @@ new Vue({
             
             const timeString = `${day} ${month}, ${hours}:${minutes}`;
             
+            // Add to local display immediately
             this.moodHistory.unshift({
                 time: timeString,
                 mood: this.fusedMood.mood,
@@ -1615,6 +1617,7 @@ new Vue({
             
             if (this.moodHistory.length > 10) this.moodHistory.pop();
             
+            // Save to backend
             try {
                 await window.apiRequest('/mood/save', {
                     method: 'POST',
