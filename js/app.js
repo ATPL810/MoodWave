@@ -1255,7 +1255,7 @@ new Vue({
                             this.isRecording = false;
                             if (this.recordingInterval) clearInterval(this.recordingInterval);
                         }
-                    }, 5000);
+                    }, 10000);
                 })
                 .catch(error => {
                     console.error('Microphone error:', error);
