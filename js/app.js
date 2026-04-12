@@ -163,64 +163,252 @@ async function analyzeFacialExpression(videoElement) {
 
 // ==================== VOICE ANALYSIS ====================
 
+// ==================== VOICE ANALYSIS WITH MEYDA ====================
+
+// Initialize Meyda analyzer
+let meydaAnalyzer = null;
+
+function initMeydaAnalyzer(audioContext, source, bufferSize = 512) {
+    if (typeof Meyda === 'undefined') {
+        console.error('Meyda not loaded');
+        return null;
+    }
+    
+    try {
+        const analyzer = Meyda.createMeydaAnalyzer({
+            audioContext: audioContext,
+            source: source,
+            bufferSize: bufferSize,
+            featureExtractors: [
+                'rms',
+                'zcr', 
+                'spectralCentroid',
+                'spectralRolloff',
+                'spectralFlatness',
+                'mfcc',
+                'energy',
+                'loudness'
+            ],
+            callback: (features) => {
+                // This runs continuously - we'll store features in a buffer
+                if (window.voiceFeatures) {
+                    window.voiceFeatures.push(features);
+                }
+            }
+        });
+        
+        return analyzer;
+    } catch (error) {
+        console.error('Failed to initialize Meyda:', error);
+        return null;
+    }
+}
+
+
 async function analyzeVoiceEmotion(audioBlob) {
-    return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = async function() {
-            try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const arrayBuffer = reader.result;
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    return new Promise(async (resolve) => {
+        try {
+            // Convert blob to array buffer
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            
+            // Create audio context
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            
+            // Get audio data
+            const channelData = audioBuffer.getChannelData(0);
+            const sampleRate = audioBuffer.sampleRate;
+            
+            // Create offline context for Meyda analysis
+            const offlineContext = new OfflineAudioContext(1, channelData.length, sampleRate);
+            const source = offlineContext.createBufferSource();
+            source.buffer = audioBuffer;
+            
+            // Initialize feature storage
+            window.voiceFeatures = [];
+            
+            // Check if Meyda is available
+            if (typeof Meyda !== 'undefined') {
+                // Use Meyda for feature extraction
+                const analyzer = initMeydaAnalyzer(offlineContext, source);
                 
-                const channelData = audioBuffer.getChannelData(0);
-                let energy = 0;
-                let zcr = 0;
-                
-                for (let i = 0; i < channelData.length; i++) {
-                    energy += channelData[i] * channelData[i];
-                }
-                energy = Math.sqrt(energy / channelData.length);
-                
-                for (let i = 1; i < channelData.length; i++) {
-                    if (channelData[i] * channelData[i-1] < 0) zcr++;
-                }
-                zcr = zcr / channelData.length;
-                
-                let mood = "Neutral";
-                let confidence = 50;
-                
-                if (energy > 0.1) {
-                    if (zcr > 0.07) {
-                        mood = "Energetic";
-                        confidence = 75;
+                if (analyzer) {
+                    analyzer.start();
+                    
+                    // Connect and render
+                    source.connect(offlineContext.destination);
+                    source.start(0);
+                    
+                    await offlineContext.startRendering();
+                    
+                    // Process collected features
+                    const features = window.voiceFeatures;
+                    
+                    if (features && features.length > 0) {
+                        const mood = classifyEmotionFromMeydaFeatures(features);
+                        resolve(mood);
                     } else {
-                        mood = "Happy";
-                        confidence = 70;
-                    }
-                } else if (energy < 0.03) {
-                    if (zcr < 0.03) {
-                        mood = "Calm";
-                        confidence = 72;
-                    } else {
-                        mood = "Sad";
-                        confidence = 65;
+                        // Fallback to manual calculation
+                        resolve(manualVoiceAnalysis(channelData));
                     }
                 } else {
-                    if (zcr > 0.06) {
-                        mood = "Stressed";
-                        confidence = 65;
-                    }
+                    resolve(manualVoiceAnalysis(channelData));
                 }
-                
-                await audioContext.close();
-                resolve({ mood, confidence });
-            } catch (error) {
-                console.error("Voice analysis error:", error);
-                resolve({ mood: "Neutral", confidence: 50 });
+            } else {
+                // Meyda not loaded - use manual analysis
+                console.log('Meyda not available - using manual analysis');
+                resolve(manualVoiceAnalysis(channelData));
             }
-        };
-        reader.readAsArrayBuffer(audioBlob);
+            
+            await audioContext.close();
+            
+        } catch (error) {
+            console.error('Voice analysis error:', error);
+            resolve({ mood: 'Neutral', confidence: 50 });
+        }
     });
+}
+
+function classifyEmotionFromMeydaFeatures(features) {
+    // Calculate averages
+    let avgRMS = 0, avgZCR = 0, avgCentroid = 0, avgRolloff = 0, avgFlatness = 0;
+    let rmsVals = [], zcrVals = [], centroidVals = [];
+    
+    features.forEach(f => {
+        if (f.rms !== undefined) {
+            avgRMS += f.rms;
+            rmsVals.push(f.rms);
+        }
+        if (f.zcr !== undefined) {
+            avgZCR += f.zcr;
+            zcrVals.push(f.zcr);
+        }
+        if (f.spectralCentroid !== undefined) {
+            avgCentroid += f.spectralCentroid;
+            centroidVals.push(f.spectralCentroid);
+        }
+        if (f.spectralRolloff !== undefined) avgRolloff += f.spectralRolloff;
+        if (f.spectralFlatness !== undefined) avgFlatness += f.spectralFlatness;
+    });
+    
+    avgRMS /= features.length;
+    avgZCR /= features.length;
+    avgCentroid /= features.length;
+    avgRolloff /= features.length;
+    avgFlatness /= features.length;
+    
+    // Calculate variance for variation detection
+    const rmsVar = calculateVariance(rmsVals, avgRMS);
+    const zcrVar = calculateVariance(zcrVals, avgZCR);
+    const centroidVar = calculateVariance(centroidVals, avgCentroid);
+    
+    console.log('Meyda Features:', {
+        avgRMS: avgRMS.toFixed(4),
+        avgZCR: avgZCR.toFixed(4),
+        avgCentroid: avgCentroid.toFixed(4),
+        rmsVar: rmsVar.toFixed(4),
+        zcrVar: zcrVar.toFixed(4),
+        spectralFlatness: avgFlatness.toFixed(4)
+    });
+    
+    // Enhanced emotion classification using Meyda features
+    let mood = "Neutral";
+    let confidence = 50;
+    
+    // High energy detection
+    if (avgRMS > 0.15) {
+        if (avgZCR > 0.08 && rmsVar > 0.005) {
+            mood = "Energetic";
+            confidence = Math.min(90, 65 + Math.round(rmsVar * 300));
+        } else if (avgCentroid > 1500) {
+            mood = "Happy";
+            confidence = Math.min(85, 60 + Math.round(avgRMS * 100));
+        } else {
+            mood = "Happy";
+            confidence = 65;
+        }
+    }
+    // Low energy detection
+    else if (avgRMS < 0.06) {
+        if (avgZCR < 0.04 && rmsVar < 0.002) {
+            mood = "Calm";
+            confidence = Math.min(85, 65 + Math.round((0.06 - avgRMS) * 300));
+        } else if (avgZCR > 0.05 || avgFlatness < 0.3) {
+            mood = "Sad";
+            confidence = Math.min(80, 55 + Math.round(zcrVar * 200));
+        } else {
+            mood = "Calm";
+            confidence = 60;
+        }
+    }
+    // Medium energy detection
+    else {
+        if (zcrVar > 0.004 || rmsVar > 0.004) {
+            mood = "Stressed";
+            confidence = Math.min(80, 55 + Math.round(zcrVar * 300));
+        } else if (avgCentroid > 1200) {
+            mood = "Energetic";
+            confidence = 65;
+        } else if (avgFlatness > 0.5) {
+            mood = "Calm";
+            confidence = 60;
+        } else {
+            mood = "Neutral";
+            confidence = 55;
+        }
+    }
+    
+    console.log(`Meyda Result: ${mood} (${confidence}%)`);
+    return { mood, confidence };
+}
+
+function calculateVariance(values, mean) {
+    if (values.length === 0) return 0;
+    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+}
+
+// Fallback manual analysis
+function manualVoiceAnalysis(channelData) {
+    let energy = 0;
+    let zcr = 0;
+    
+    for (let i = 0; i < channelData.length; i++) {
+        energy += channelData[i] * channelData[i];
+    }
+    energy = Math.sqrt(energy / channelData.length);
+    
+    for (let i = 1; i < channelData.length; i++) {
+        if (channelData[i] * channelData[i-1] < 0) zcr++;
+    }
+    zcr = zcr / channelData.length;
+    
+    let mood = "Neutral";
+    let confidence = 50;
+    
+    if (energy > 0.1) {
+        if (zcr > 0.07) {
+            mood = "Energetic";
+            confidence = 75;
+        } else {
+            mood = "Happy";
+            confidence = 70;
+        }
+    } else if (energy < 0.03) {
+        if (zcr < 0.03) {
+            mood = "Calm";
+            confidence = 72;
+        } else {
+            mood = "Sad";
+            confidence = 65;
+        }
+    } else {
+        if (zcr > 0.06) {
+            mood = "Stressed";
+            confidence = 65;
+        }
+    }
+    
+    return { mood, confidence };
 }
 
 // ==================== TEXT ANALYSIS ====================
@@ -412,6 +600,12 @@ new Vue({
         
         cleanupAllMedia() {
             window.disableMediaAccess();
+
+            // Stop Meyda analyzer
+            if (this.meydaAnalyzer) {
+                this.meydaAnalyzer.stop();
+                this.meydaAnalyzer = null;
+            }
             
             // Stop camera
             if (this.cameraStream) {
@@ -421,6 +615,7 @@ new Vue({
                 });
                 this.cameraStream = null;
             }
+            
             
             // Stop microphone
             if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
@@ -626,6 +821,10 @@ new Vue({
         // ==================== FACE DETECTION ====================
         
         startFacialAnalysis() {
+            if (this.currentPage !== 'music' || !this.currentUser) {
+                console.warn('Cannot start camera - not on music page or not logged in');
+                return;
+            }
             // Enable media access first
             window.enableMediaAccess();
             
@@ -762,7 +961,6 @@ new Vue({
         // ==================== VOICE ANALYSIS ====================
         
         startVoiceAnalysis() {
-            // Enable media access first
             window.enableMediaAccess();
             
             this.showVoiceModal = true;
@@ -771,17 +969,62 @@ new Vue({
             this.recordingTime = 0;
             this.audioChunks = [];
             
+            // Clear previous features
+            window.voiceFeatures = [];
+            
             navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(stream => {
                     this.mediaRecorder = new MediaRecorder(stream);
+                    
+                    // Also set up Meyda for real-time analysis
+                    if (typeof Meyda !== 'undefined') {
+                        try {
+                            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                            const source = audioContext.createMediaStreamSource(stream);
+                            
+                            this.meydaAnalyzer = Meyda.createMeydaAnalyzer({
+                                audioContext: audioContext,
+                                source: source,
+                                bufferSize: 512,
+                                featureExtractors: ['rms', 'zcr', 'spectralCentroid', 'energy'],
+                                callback: (features) => {
+                                    if (features && features.rms) {
+                                        // Update real-time detection
+                                        const energy = features.rms;
+                                        if (energy > 0.15) {
+                                            this.voiceMood = 'Energetic/Happy';
+                                        } else if (energy < 0.05) {
+                                            this.voiceMood = 'Calm/Sad';
+                                        } else {
+                                            this.voiceMood = 'Neutral';
+                                        }
+                                        this.voiceConfidence = Math.min(80, 50 + Math.round(energy * 100));
+                                    }
+                                }
+                            });
+                            
+                            if (this.meydaAnalyzer) {
+                                this.meydaAnalyzer.start();
+                            }
+                        } catch (e) {
+                            console.log('Real-time Meyda not available:', e);
+                        }
+                    }
                     
                     this.mediaRecorder.ondataavailable = (event) => {
                         if (event.data.size > 0) this.audioChunks.push(event.data);
                     };
                     
                     this.mediaRecorder.onstop = async () => {
+                        // Stop Meyda analyzer
+                        if (this.meydaAnalyzer) {
+                            this.meydaAnalyzer.stop();
+                            this.meydaAnalyzer = null;
+                        }
+                        
                         const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
                         const result = await analyzeVoiceEmotion(audioBlob);
+                        
                         this.voiceMood = result.mood;
                         this.voiceConfidence = result.confidence;
                         this.voiceAnalysis.mood = result.mood;
@@ -790,6 +1033,7 @@ new Vue({
                         this.voiceAnalysis.completed = true;
                         this.showVoiceModal = false;
                         window.disableMediaAccess();
+                        
                         this.showToast(`Voice detected: ${result.mood} (${result.confidence}%)`, 'success');
                         this.checkAllModalsCompleted();
                         stream.getTracks().forEach(track => track.stop());
@@ -853,6 +1097,13 @@ new Vue({
         
         closeVoiceModal() {
             window.disableMediaAccess();
+            
+            // Stop Meyda analyzer
+            if (this.meydaAnalyzer) {
+                this.meydaAnalyzer.stop();
+                this.meydaAnalyzer = null;
+            }
+            
             if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
                 this.mediaRecorder.stop();
             }
@@ -865,7 +1116,7 @@ new Vue({
             if (this.recordingInterval) clearInterval(this.recordingInterval);
             if (this.voiceVisualizationInterval) clearInterval(this.voiceVisualizationInterval);
         },
-        
+                
         // ==================== TEXT ANALYSIS ====================
         
         async analyzeText() {
@@ -977,22 +1228,42 @@ new Vue({
         getMockTracks(mood) {
             const mockData = {
                 Happy: [
-                    { id: '1', name: 'Happy', artist: 'Pharrell Williams', albumArt: '', externalUrl: 'https://open.spotify.com/track/60nZcImufyMA1MKQY3dcCH', color: '#FFD700' },
-                    { id: '2', name: 'Good Vibrations', artist: 'The Beach Boys', albumArt: '', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#FFD700' }
+                    { id: 'h1', name: 'Happy', artist: 'Pharrell Williams', externalUrl: 'https://open.spotify.com/track/60nZcImufyMA1MKQY3dcCH', color: '#FFD700' },
+                    { id: 'h2', name: 'Walking On Sunshine', artist: 'Katrina & The Waves', externalUrl: 'https://open.spotify.com/track/05wIrZSwuaVWhcv5FfqeH0', color: '#FFD700' },
+                    { id: 'h3', name: 'Can\'t Stop The Feeling', artist: 'Justin Timberlake', externalUrl: 'https://open.spotify.com/track/77j6af0Q5PqH2Xh8Wq0O5K', color: '#FFD700' },
+                    { id: 'h4', name: 'Uptown Funk', artist: 'Mark Ronson ft. Bruno Mars', externalUrl: 'https://open.spotify.com/track/32OlwWuMpZ6b0aN2RZOeMS', color: '#FFD700' },
+                    { id: 'h5', name: 'I Gotta Feeling', artist: 'Black Eyed Peas', externalUrl: 'https://open.spotify.com/track/2H1047e0oMSj10dgp7p2VG', color: '#FFD700' },
+                    { id: 'h6', name: 'Shake It Off', artist: 'Taylor Swift', externalUrl: 'https://open.spotify.com/track/2oq5dRcvN2eRJ0yD8D0D0D', color: '#FFD700' }
                 ],
                 Sad: [
-                    { id: '3', name: 'Someone Like You', artist: 'Adele', albumArt: '', externalUrl: 'https://open.spotify.com/track/3bNv3VuUOKgrf5hu3YcuRo', color: '#45B7D1' },
-                    { id: '4', name: 'Fix You', artist: 'Coldplay', albumArt: '', externalUrl: 'https://open.spotify.com/track/7LVHVU3tWfcxj5aiPFEW4Q', color: '#45B7D1' }
+                    { id: 's1', name: 'Someone Like You', artist: 'Adele', externalUrl: 'https://open.spotify.com/track/3bNv3VuUOKgrf5hu3YcuRo', color: '#45B7D1' },
+                    { id: 's2', name: 'Fix You', artist: 'Coldplay', externalUrl: 'https://open.spotify.com/track/7LVHVU3tWfcxj5aiPFEW4Q', color: '#45B7D1' },
+                    { id: 's3', name: 'All I Want', artist: 'Kodaline', externalUrl: 'https://open.spotify.com/track/0NlGoUyOJSuSHmngoibVAs', color: '#45B7D1' },
+                    { id: 's4', name: 'Say Something', artist: 'A Great Big World', externalUrl: 'https://open.spotify.com/track/6Vc5wAMmXdKIAM7WUoEb7N', color: '#45B7D1' },
+                    { id: 's5', name: 'Skinny Love', artist: 'Bon Iver', externalUrl: 'https://open.spotify.com/track/3B3eOgLJSqPEA0RfboIQVM', color: '#45B7D1' },
+                    { id: 's6', name: 'The Night We Met', artist: 'Lord Huron', externalUrl: 'https://open.spotify.com/track/0QZ5yyl6B6utIWkxeBDxQN', color: '#45B7D1' }
                 ],
                 Energetic: [
-                    { id: '5', name: 'Eye of the Tiger', artist: 'Survivor', albumArt: '', externalUrl: 'https://open.spotify.com/track/2KH16WveTQWT6KOG9Rg6e2', color: '#FF6B6B' },
-                    { id: '6', name: 'Stronger', artist: 'Kanye West', albumArt: '', externalUrl: 'https://open.spotify.com/track/6F2QnPXF4m5cSqyqQk9cZf', color: '#FF6B6B' }
+                    { id: 'e1', name: 'Eye of the Tiger', artist: 'Survivor', externalUrl: 'https://open.spotify.com/track/2KH16WveTQWT6KOG9Rg6e2', color: '#FF6B6B' },
+                    { id: 'e2', name: 'Stronger', artist: 'Kanye West', externalUrl: 'https://open.spotify.com/track/0j2T0R9dR9qdJYsB7ciXhf', color: '#FF6B6B' },
+                    { id: 'e3', name: 'Thunderstruck', artist: 'AC/DC', externalUrl: 'https://open.spotify.com/track/57bgtoPSgt236HzfBOd8kj', color: '#FF6B6B' },
+                    { id: 'e4', name: 'Don\'t Stop Me Now', artist: 'Queen', externalUrl: 'https://open.spotify.com/track/5T8EDUDqKcs6OSOwEsfqG7', color: '#FF6B6B' },
+                    { id: 'e5', name: 'Levels', artist: 'Avicii', externalUrl: 'https://open.spotify.com/track/5UqCQaDshqbIk3pkhy4Pjg', color: '#FF6B6B' },
+                    { id: 'e6', name: 'Titanium', artist: 'David Guetta ft. Sia', externalUrl: 'https://open.spotify.com/track/0lQn50x1bzkr2RcN8JwJjU', color: '#FF6B6B' }
                 ],
                 Calm: [
-                    { id: '7', name: 'Weightless', artist: 'Marconi Union', albumArt: '', externalUrl: 'https://open.spotify.com/track/6kkbVk5l4s5Q4q4q4q4q4q', color: '#96CEB4' }
+                    { id: 'c1', name: 'Weightless', artist: 'Marconi Union', externalUrl: 'https://open.spotify.com/track/4c1Hj1QxN8K8K8K8K8K8K8', color: '#96CEB4' },
+                    { id: 'c2', name: 'River Flows In You', artist: 'Yiruma', externalUrl: 'https://open.spotify.com/track/3x7Ni6n4X0gK0gK0gK0gK0', color: '#96CEB4' },
+                    { id: 'c3', name: 'Gymnopédie No.1', artist: 'Erik Satie', externalUrl: 'https://open.spotify.com/track/5NGtFXVpXSvwunEIGeviY3', color: '#96CEB4' },
+                    { id: 'c4', name: 'Holocene', artist: 'Bon Iver', externalUrl: 'https://open.spotify.com/track/1ILEKd4NUJKBn7dRc7c7c7', color: '#96CEB4' },
+                    { id: 'c5', name: 'Bloom', artist: 'The Paper Kites', externalUrl: 'https://open.spotify.com/track/0k0k0k0k0k0k0k0k0k0k0', color: '#96CEB4' }
                 ],
                 Stressed: [
-                    { id: '8', name: 'Breathe', artist: 'Pink Floyd', albumArt: '', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#4ECDC4' }
+                    { id: 't1', name: 'Breathe Me', artist: 'Sia', externalUrl: 'https://open.spotify.com/track/5hxukp7zZrA2cWf1Uq1Yg4', color: '#4ECDC4' },
+                    { id: 't2', name: 'Three Little Birds', artist: 'Bob Marley', externalUrl: 'https://open.spotify.com/track/3bNv3VuUOKgrf5hu3YcuRo', color: '#4ECDC4' },
+                    { id: 't3', name: 'Let It Be', artist: 'The Beatles', externalUrl: 'https://open.spotify.com/track/0j2T0R9dR9qdJYsB7ciXhf', color: '#4ECDC4' },
+                    { id: 't4', name: 'Here Comes The Sun', artist: 'The Beatles', externalUrl: 'https://open.spotify.com/track/6dGnYIeXmHdcikdzNNDMm2', color: '#4ECDC4' },
+                    { id: 't5', name: 'What A Wonderful World', artist: 'Louis Armstrong', externalUrl: 'https://open.spotify.com/track/29U7stRjqHU6rMiS8BfaI9', color: '#4ECDC4' }
                 ]
             };
             return mockData[mood] || mockData.Happy;
