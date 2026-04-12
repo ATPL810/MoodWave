@@ -933,8 +933,43 @@ new Vue({
         async fetchMoodHistory() {
             try {
                 const data = await window.apiRequest('/mood/history');
-                if (data.success) this.moodHistory = data.history;
-            } catch (error) { console.error('Failed to fetch mood history:', error); }
+                if (data.success) {
+                    // Format each entry with Mauritius time
+                    this.moodHistory = data.history.map(entry => {
+                        const date = new Date(entry.createdAt || entry.timestamp);
+                        
+                        const options = {
+                            timeZone: 'Indian/Mauritius',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false,
+                            weekday: 'short',
+                            day: 'numeric',
+                            month: 'short'
+                        };
+                        
+                        const formatter = new Intl.DateTimeFormat('en-GB', options);
+                        const parts = formatter.formatToParts(date);
+                        
+                        let weekday = '', day = '', month = '', hour = '', minute = '';
+                        parts.forEach(part => {
+                            if (part.type === 'weekday') weekday = part.value;
+                            if (part.type === 'day') day = part.value;
+                            if (part.type === 'month') month = part.value;
+                            if (part.type === 'hour') hour = part.value;
+                            if (part.type === 'minute') minute = part.value;
+                        });
+                        
+                        return {
+                            time: `${weekday} ${day} ${month}, ${hour}:${minute}`,
+                            mood: entry.mood,
+                            confidence: entry.confidence
+                        };
+                    });
+                }
+            } catch (error) { 
+                console.error('Failed to fetch mood history:', error); 
+            }
         },
         
         confirmLogout() { this.showLogoutModal = true; },
@@ -1570,22 +1605,56 @@ new Vue({
         // ==================== DASHBOARD ====================
         
         async updateDashboard() {
+            // Create date in Mauritius timezone (GMT+4)
             const now = new Date();
-            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            // Format for Mauritius time
+            const options = {
+                timeZone: 'Indian/Mauritius',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short'
+            };
+            
+            const formatter = new Intl.DateTimeFormat('en-GB', options);
+            const parts = formatter.formatToParts(now);
+            
+            // Extract parts
+            let weekday = '', day = '', month = '', hour = '', minute = '';
+            parts.forEach(part => {
+                if (part.type === 'weekday') weekday = part.value;
+                if (part.type === 'day') day = part.value;
+                if (part.type === 'month') month = part.value;
+                if (part.type === 'hour') hour = part.value;
+                if (part.type === 'minute') minute = part.value;
+            });
+            
+            // Create formatted time string: "Mon 12 Apr, 14:30"
+            const timeString = `${weekday} ${day} ${month}, ${hour}:${minute}`;
+            
+            // Add to mood history
             this.moodHistory.unshift({
                 time: timeString,
                 mood: this.fusedMood.mood,
-                confidence: this.fusedMood.confidence
+                confidence: this.fusedMood.confidence,
+                fullDate: now.toLocaleDateString('en-GB', { timeZone: 'Indian/Mauritius' })
             });
+            
             if (this.moodHistory.length > 10) this.moodHistory.pop();
             
+            // Save to backend with Mauritius timestamp
             try {
                 await window.apiRequest('/mood/save', {
                     method: 'POST',
                     body: JSON.stringify({
                         mood: this.fusedMood.mood,
                         confidence: this.fusedMood.confidence,
-                        description: this.fusedMood.description
+                        description: this.fusedMood.description,
+                        timezone: 'Indian/Mauritius',
+                        timestamp: now.toISOString()
                     })
                 });
             } catch (error) { 
