@@ -211,28 +211,28 @@
                         </p>
                     </div>
 
-                <!-- Mood Dashboard -->
-                <div class="dashboard">
-                    <h2>Your Mood Journey</h2>
-                    <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
-                        <i class="fa-solid fa-clock"></i> Mauritius Time (GMT+4)
-                    </p>
-                    <div class="mood-timeline">
-                        <div v-if="moodHistory.length === 0" class="no-data">
-                            <i class="fa-solid fa-face-smile" style="font-size: 48px; margin-bottom: 15px; opacity: 0.5;"></i>
-                            <p>No mood data yet. Visit the Music Recommendation page to start your journey.</p>
-                        </div>
-                        <div v-else v-for="(entry, index) in moodHistory" :key="index" class="mood-entry">
-                            <div class="mood-time">
-                                <i class="fa-regular fa-calendar"></i> {{ entry.time }}
+                    <!-- Mood Dashboard -->
+                    <div class="dashboard">
+                        <h2>Your Mood Journey</h2>
+                        <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                            <i class="fa-solid fa-clock"></i> Mauritius Time (GMT+4)
+                        </p>
+                        <div class="mood-timeline">
+                            <div v-if="moodHistory.length === 0" class="no-data">
+                                <i class="fa-solid fa-face-smile" style="font-size: 48px; margin-bottom: 15px; opacity: 0.5;"></i>
+                                <p>No mood data yet. Visit the Music Recommendation page to start your journey.</p>
                             </div>
-                            <div class="mood-status">
-                                <span class="mood-label">{{ entry.mood }}</span>
-                                <span class="mood-confidence">{{ entry.confidence }}% confidence</span>
+                            <div v-else v-for="(entry, index) in moodHistory" :key="index" class="mood-entry">
+                                <div class="mood-time">
+                                    <i class="fa-regular fa-calendar"></i> {{ entry.time }}
+                                </div>
+                                <div class="mood-status">
+                                    <span class="mood-label">{{ entry.mood }}</span>
+                                    <span class="mood-confidence">{{ entry.confidence }}% confidence</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
                 <!-- Music Recommendation Page -->
                 <div v-else-if="currentPage === 'music'">

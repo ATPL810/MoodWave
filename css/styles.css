@@ -443,10 +443,6 @@ h2 {
     background: linear-gradient(135deg, #f5f7ff 0%, #ede7f6 100%);
 }
 
-.app-container.dark-mode .mood-entry:hover {
-    background: linear-gradient(135deg, #3a3a5c 0%, #4a3a6a 100%);
-}
-
 .mood-time i {
     margin-right: 8px;
     opacity: 0.6;
@@ -456,10 +452,6 @@ h2 {
     min-width: 120px;
     color: #555;
     font-size: 14px;
-}
-
-.app-container.dark-mode .mood-time {
-    color: #ccc;
 }
 
 .mood-status {
