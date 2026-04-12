@@ -173,7 +173,7 @@ async function initFaceDetection() {
         await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
         
         faceModelsLoaded = true;
-        console.log("✅ Face detection models loaded");
+        console.log(" Face detection models loaded");
         return true;
     } catch (error) {
         console.error("Face detection error:", error);
@@ -966,7 +966,7 @@ new Vue({
         
         showToast(message, type) {
             this.toast = { show: true, message, type };
-            setTimeout(() => { this.toast.show = false; }, 3000);
+            setTimeout(() => { this.toast.show = false; }, 1000);
         },
         
         // ==================== SPOTIFY CONNECTION ====================
@@ -987,7 +987,7 @@ new Vue({
                     window.location.href = data.authUrl;
                 }
             } catch (error) {
-                this.showToast('Failed to connect Spotify', 'error');
+                this.showToast('Spotify API', 'error');
             }
         },
         
@@ -1007,7 +1007,6 @@ new Vue({
             this.faceDetectionRunning = true;
             
             if (!this.modelsReady) {
-                this.showToast('Face detection not ready - using simulation', 'error');
                 this.startFacialAnalysisSimulation();
                 return;
             }
@@ -1026,8 +1025,7 @@ new Vue({
                     this.startCountdown();
                 })
                 .catch(error => {
-                    console.error('Camera error:', error);
-                    this.showToast('Could not access camera. Using simulation.', 'error');
+                    console.error('Camera error:', error);                    
                     this.closeCameraModal();
                     this.startFacialAnalysisSimulation();
                 });
@@ -1098,7 +1096,6 @@ new Vue({
             this.stopCameraStream();
             this.showCameraModal = false;
             window.disableMediaAccess();
-            this.showToast(`Face detected: ${this.facialAnalysis.mood} (${this.facialAnalysis.accuracy}%)`, 'success');
             this.checkAllModalsCompleted();
         },
         
@@ -1114,7 +1111,6 @@ new Vue({
                     const moods = ['Happy', 'Sad', 'Energetic', 'Calm', 'Stressed'];
                     this.facialAnalysis.mood = moods[Math.floor(Math.random() * moods.length)];
                     this.facialAnalysis.accuracy = Math.floor(Math.random() * 20) + 75;
-                    this.showToast(`Face simulation: ${this.facialAnalysis.mood}`, 'success');
                     this.checkAllModalsCompleted();
                 }
             }, 1000);
@@ -1334,50 +1330,131 @@ new Vue({
         },
         
         fuseModalities() {
-            const moods = [this.facialAnalysis.mood, this.voiceAnalysis.mood, this.textAnalysis.mood];
-            const accuracies = [this.facialAnalysis.accuracy, this.voiceAnalysis.accuracy, this.textAnalysis.accuracy];
+            const modalities = [
+                { name: 'facial', mood: this.facialAnalysis.mood, confidence: this.facialAnalysis.accuracy },
+                { name: 'voice', mood: this.voiceAnalysis.mood, confidence: this.voiceAnalysis.accuracy },
+                { name: 'text', mood: this.textAnalysis.mood, confidence: this.textAnalysis.accuracy }
+            ];
             
-            const weights = { Happy: 0, Sad: 0, Energetic: 0, Calm: 0, Stressed: 0 };
-            moods.forEach((mood, index) => {
-                if (mood && weights[mood] !== undefined) {
-                    weights[mood] += accuracies[index];
+            // Filter out modalities with no data
+            const validModalities = modalities.filter(m => m.mood && m.confidence > 0);
+            
+            if (validModalities.length === 0) {
+                this.fusedMood = { 
+                    mood: 'Neutral', 
+                    confidence: 50, 
+                    description: 'No mood data available.'
+                };
+                return;
+            }
+            
+            // Step 1: Calculate weighted scores for each mood
+            const moodScores = {
+                'Happy': 0,
+                'Sad': 0,
+                'Energetic': 0,
+                'Calm': 0,
+                'Stressed': 0,
+                'Neutral': 0
+            };
+            
+            let totalConfidence = 0;
+            
+            validModalities.forEach(modality => {
+                const mood = modality.mood;
+                const confidence = modality.confidence;
+                
+                // Add weighted score
+                if (moodScores.hasOwnProperty(mood)) {
+                    moodScores[mood] += confidence;
+                    totalConfidence += confidence;
                 }
             });
             
+            // Step 2: Find the mood with highest score
             let fusedMood = 'Neutral';
-            let maxWeight = 0;
-            for (const [mood, weight] of Object.entries(weights)) {
-                if (weight > maxWeight) {
-                    maxWeight = weight;
+            let maxScore = 0;
+            
+            for (const [mood, score] of Object.entries(moodScores)) {
+                if (score > maxScore) {
+                    maxScore = score;
                     fusedMood = mood;
                 }
             }
             
-            let totalAccuracy = 0;
-            let count = 0;
-            moods.forEach((mood, index) => {
-                if (mood === fusedMood) {
-                    totalAccuracy += accuracies[index];
-                    count++;
+            // Step 3: Calculate fusion confidence
+            // This is the agreement level among modalities
+            let fusionConfidence = 0;
+            
+            if (validModalities.length === 1) {
+                // Only one modality - use its confidence
+                fusionConfidence = validModalities[0].confidence;
+            } else if (validModalities.length === 2) {
+                // Two modalities - check agreement
+                const [m1, m2] = validModalities;
+                if (m1.mood === m2.mood) {
+                    // Both agree - higher confidence
+                    fusionConfidence = Math.round((m1.confidence + m2.confidence) / 2 * 1.2);
+                } else {
+                    // Disagree - weighted toward higher confidence
+                    fusionConfidence = Math.round(Math.max(m1.confidence, m2.confidence) * 0.8);
                 }
-            });
-            const confidence = count > 0 ? Math.round(totalAccuracy / count) : 70;
+            } else {
+                // Three modalities - full fusion
+                const agreeCount = validModalities.filter(m => m.mood === fusedMood).length;
+                const avgConfidence = validModalities.reduce((sum, m) => sum + m.confidence, 0) / validModalities.length;
+                
+                if (agreeCount === 3) {
+                    // All three agree - very confident!
+                    fusionConfidence = Math.round(avgConfidence * 1.3);
+                } else if (agreeCount === 2) {
+                    // Two agree - good confidence
+                    fusionConfidence = Math.round(avgConfidence * 1.1);
+                } else {
+                    // All disagree - use highest with penalty
+                    fusionConfidence = Math.round(maxScore / validModalities.length * 0.85);
+                }
+            }
+            
+            // Cap confidence between 40-95%
+            fusionConfidence = Math.min(95, Math.max(40, fusionConfidence));
+            
+            // Step 4: Generate description based on agreement
+            const agreeCount = validModalities.filter(m => m.mood === fusedMood).length;
+            
+            let agreementText = '';
+            if (agreeCount === 3) {
+                agreementText = 'All three analyses strongly agree!';
+            } else if (agreeCount === 2) {
+                agreementText = 'Two analyses agree on this mood.';
+            } else {
+                agreementText = 'Mixed signals detected - this is the dominant mood.';
+            }
             
             const descriptions = {
-                Happy: 'Your cheerful mood shines through! Playing uplifting Spotify tracks.',
-                Sad: 'We hear you. Playing soulful Spotify tracks that may help.',
-                Energetic: 'High energy detected! Playing powerful Spotify tracks.',
-                Calm: 'Peaceful state detected. Playing soothing Spotify tracks.',
-                Stressed: 'Playing calming Spotify tracks to help you relax.'
+                'Happy': `😊 ${agreementText} Your cheerful mood shines through! Playing uplifting tracks.`,
+                'Sad': `💙 ${agreementText} We hear you. Playing soulful tracks that may help.`,
+                'Energetic': `⚡ ${agreementText} High energy detected! Playing powerful tracks.`,
+                'Calm': `🌸 ${agreementText} Peaceful state detected. Playing soothing tracks.`,
+                'Stressed': `🌊 ${agreementText} Playing calming tracks to help you relax.`,
+                'Neutral': `🎵 ${agreementText} Playing balanced tracks for your mood.`
             };
+            
+            // Step 5: Log fusion details for debugging
+            console.log('=== Mood Fusion ===');
+            console.log('Modalities:', validModalities);
+            console.log('Mood Scores:', moodScores);
+            console.log('Fused Mood:', fusedMood);
+            console.log('Agreement:', agreeCount, '/', validModalities.length);
+            console.log('Confidence:', fusionConfidence, '%');
             
             this.fusedMood = { 
                 mood: fusedMood, 
-                confidence, 
-                description: descriptions[fusedMood] || 'Playing personalized Spotify tracks for you.'
+                confidence: fusionConfidence, 
+                description: descriptions[fusedMood] || descriptions['Neutral']
             };
             
-            this.showToast(`Final mood: ${fusedMood} (${confidence}%)`, 'success');
+            this.showToast(`Final mood: ${fusedMood} (${fusionConfidence}%)`, 'success');
         },
         
         // ==================== SPOTIFY RECOMMENDATIONS ====================
@@ -1401,7 +1478,7 @@ new Vue({
                     this.showToast(`Found ${response.tracks.length} Spotify tracks!`, 'success');
                 } else {
                     this.recommendedTracks = this.getMockTracks(this.fusedMood.mood);
-                    this.showToast('Using demo tracks - connect Spotify for real music', 'error');
+                    this.showToast('Nice songs to be recommended');
                 }
             } catch (error) {
                 console.error('Spotify error:', error);
@@ -1459,10 +1536,7 @@ new Vue({
         // ==================== SPOTIFY PLAYBACK ====================
         
         playSpotifyTrack(track) {
-            if (!track.externalUrl) {
-                this.showToast('No Spotify URL available', 'error');
-                return;
-            }
+            
             
             window.open(track.externalUrl, '_blank');
             
