@@ -933,8 +933,31 @@ new Vue({
         async fetchMoodHistory() {
             try {
                 const data = await window.apiRequest('/mood/history');
-                if (data.success) this.moodHistory = data.history;
-            } catch (error) { console.error('Failed to fetch mood history:', error); }
+                if (data.success) {
+                    this.moodHistory = data.history.map(entry => {
+                        // Parse the stored timestamp
+                        const utcTime = new Date(entry.createdAt || entry.timestamp || new Date());
+                        
+                        // Add 4 hours for Mauritius time
+                        const mauritiusTime = new Date(utcTime.getTime() + (4 * 60 * 60 * 1000));
+                        
+                        // Format: "12 Apr, 14:30"
+                        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        const day = mauritiusTime.getDate();
+                        const month = months[mauritiusTime.getMonth()];
+                        const hours = String(mauritiusTime.getHours()).padStart(2, '0');
+                        const minutes = String(mauritiusTime.getMinutes()).padStart(2, '0');
+                        
+                        return {
+                            time: `${day} ${month}, ${hours}:${minutes}`,
+                            mood: entry.mood,
+                            confidence: entry.confidence
+                        };
+                    });
+                }
+            } catch (error) { 
+                console.error('Failed to fetch mood history:', error); 
+            }
         },
         
         confirmLogout() { this.showLogoutModal = true; },
@@ -1571,12 +1594,25 @@ new Vue({
         
         async updateDashboard() {
             const now = new Date();
-            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            // Add 4 hours for Mauritius time (GMT+4)
+            const mauritiusTime = new Date(now.getTime() + (4 * 60 * 60 * 1000));
+            
+            // Format: "12 Apr, 14:30"
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const day = mauritiusTime.getDate();
+            const month = months[mauritiusTime.getMonth()];
+            const hours = String(mauritiusTime.getHours()).padStart(2, '0');
+            const minutes = String(mauritiusTime.getMinutes()).padStart(2, '0');
+            
+            const timeString = `${day} ${month}, ${hours}:${minutes}`;
+            
             this.moodHistory.unshift({
                 time: timeString,
                 mood: this.fusedMood.mood,
                 confidence: this.fusedMood.confidence
             });
+            
             if (this.moodHistory.length > 10) this.moodHistory.pop();
             
             try {
